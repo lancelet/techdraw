@@ -15,7 +15,7 @@ This is implemented as a tree of nodes which are interpreted at render time to `
 The tree also includes an SVG breakout node, so that regular SVG can be interspersed with the
 technical drawing nodes.
 
-## Notes
+## Tooling Notes
 
 Use [elm-test](https://package.elm-lang.org/packages/elm-explorations/test/) and
 [elm-verity-examples](https://github.com/stoeffel/elm-verify-examples) for testing:
@@ -23,4 +23,10 @@ Use [elm-test](https://package.elm-lang.org/packages/elm-explorations/test/) and
 ```sh
 elm-test
 elm-verify-examples --run-tests
+```
+
+For local documentation preview, use [elm-doc-preview](https://github.com/dmy/elm-doc-preview)
+
+```sh
+elm-doc-preview
 ```
