@@ -1,5 +1,7 @@
 # Technical Drawing in Elm
 
+![GitHub CI](https://github.com/lancelet/techdraw/actions/workflows/elm.yml/badge.svg)
+
 This package interoperates with the `svg` package in Elm. It provides its own affine
 transformation stack which tracks local-to-world and world-to-local coordinate transformations.
 This allows:
