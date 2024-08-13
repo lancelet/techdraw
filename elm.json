@@ -7,7 +7,8 @@
     "source-directories": ["src"],
     "exposed-modules": [
         "Techdraw.Internal.AffineMatrix",
-        "Techdraw.Internal.BiTransform"
+        "Techdraw.Internal.BiTransform",
+        "Techdraw.Internal.TransformStack"
     ],
     "elm-version": "0.19.1 <= v < 0.20.0",
     "dependencies": {
