@@ -1,9 +1,13 @@
 module Techdraw.Internal.Fuzzer exposing
     ( Range(..)
     , TestTransform(..)
+    , TestTranslation(..)
+    , TestScale(..)
+    , TestRotate(..)
     , genPt, genPtRange
     , genHPt, genHPtRange
     , genAffineMatrix, genAffineMatrixTestTransforms, applyTestTransforms, toAffineMatrix
+    , genTranslate, genScale, genRotate
     )
 
 {-| Testing fuzzers for this package.
@@ -13,6 +17,9 @@ module Techdraw.Internal.Fuzzer exposing
 
 @docs Range
 @docs TestTransform
+@docs TestTranslation
+@docs TestScale
+@docs TestRotate
 
 
 # Fuzzers
@@ -27,6 +34,7 @@ module Techdraw.Internal.Fuzzer exposing
 ## Affine matrices
 
 @docs genAffineMatrix, genAffineMatrixTestTransforms, applyTestTransforms, toAffineMatrix
+@docs genTranslate, genScale, genRotate
 
 -}
 
@@ -129,24 +137,42 @@ genAffineMatrixTestTransforms =
         (listOfLengthBetween 1 10 genTestTransform)
 
 
+{-| Translation.
+-}
+type TestTranslation
+    = TestTranslation { tx : Float, ty : Float }
+
+
+{-| Scale.
+-}
+type TestScale
+    = TestScale { sx : Float, sy : Float }
+
+
+{-| Rotation.
+-}
+type TestRotate
+    = TestRotate { radians : Float }
+
+
 {-| Individual parts of test transformations.
 -}
 type TestTransform
-    = Translate { tx : Float, ty : Float }
-    | Scale { sx : Float, sy : Float }
-    | Rotate { radians : Float }
+    = TTTranslate TestTranslation
+    | TTScale TestScale
+    | TTRotate TestRotate
 
 
 applyTestTransform : TestTransform -> ( Float, Float ) -> ( Float, Float )
 applyTestTransform tt ( px, py ) =
     case tt of
-        Translate t ->
+        TTTranslate (TestTranslation t) ->
             ( px + t.tx, py + t.ty )
 
-        Scale s ->
+        TTScale (TestScale s) ->
             ( px * s.sx, py * s.sy )
 
-        Rotate r ->
+        TTRotate (TestRotate r) ->
             let
                 s =
                     sin r.radians
@@ -169,36 +195,46 @@ applyTestTransforms tts pt =
 toAffineMatrix : TestTransform -> AffineMatrix
 toAffineMatrix tt =
     case tt of
-        Translate obj ->
+        TTTranslate (TestTranslation obj) ->
             AffineMatrix.translation ( obj.tx, obj.ty )
 
-        Scale obj ->
+        TTScale (TestScale obj) ->
             AffineMatrix.scaling ( obj.sx, obj.sy )
 
-        Rotate obj ->
+        TTRotate (TestRotate obj) ->
             AffineMatrix.rotationRadians obj.radians
 
 
-genTranslate : Fuzzer TestTransform
+{-| Generate a test translation.
+-}
+genTranslate : Fuzzer TestTranslation
 genTranslate =
-    Fuzz.map (\( tx, ty ) -> Translate { tx = tx, ty = ty }) genPt
+    Fuzz.map (\( tx, ty ) -> TestTranslation { tx = tx, ty = ty }) genPt
 
 
-genScale : Fuzzer TestTransform
+{-| Generate a test scale.
+-}
+genScale : Fuzzer TestScale
 genScale =
     Fuzz.map2
-        (\sx sy -> Scale { sx = sx, sy = sy })
+        (\sx sy -> TestScale { sx = sx, sy = sy })
         (floatRange 0.1 10.0)
         (floatRange 0.1 10.0)
 
 
-genRotate : Fuzzer TestTransform
+{-| Generate a test rotation.
+-}
+genRotate : Fuzzer TestRotate
 genRotate =
     Fuzz.map
-        (\radians -> Rotate { radians = radians })
+        (\radians -> TestRotate { radians = radians })
         (floatRange (-3 * pi) (3 * pi))
 
 
 genTestTransform : Fuzzer TestTransform
 genTestTransform =
-    oneOf [ genTranslate, genScale, genRotate ]
+    oneOf
+        [ Fuzz.map TTTranslate genTranslate
+        , Fuzz.map TTScale genScale
+        , Fuzz.map TTRotate genRotate
+        ]

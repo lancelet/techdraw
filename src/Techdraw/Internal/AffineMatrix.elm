@@ -135,7 +135,7 @@ Ordering here is important for transformations. The first transformation is the 
 this function, and the second transformation is the first argument (ie. transformations are
 composed in reverse order).
 
-For example, if we start with a point located at zero, we can scale it then translate it:
+For example, if we start with a point located at the origin, we can scale it then translate it:
 
     let scale = scaling (5, 4)
         trans = translation (1, 2)

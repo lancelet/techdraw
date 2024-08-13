@@ -7,6 +7,7 @@ import Techdraw.Internal.Fuzzer
     exposing
         ( Range(..)
         , TestTransform(..)
+        , TestTranslation(..)
         , applyTestTransforms
         , genAffineMatrix
         , genAffineMatrixTestTransforms
@@ -207,7 +208,7 @@ testTestTransformTranslate =
         \() ->
             let
                 tt =
-                    Translate { tx = 300, ty = 200 }
+                    TTTranslate (TestTranslation { tx = 300, ty = 200 })
 
                 expected =
                     AffineMatrix.new 1 0 0 1 300 200
@@ -224,7 +225,7 @@ testTestTransformsTranslateApply =
         \( px, py ) ( tx, ty ) ->
             let
                 tt =
-                    Translate { tx = tx, ty = ty }
+                    TTTranslate (TestTranslation { tx = tx, ty = ty })
 
                 expected =
                     ( px + tx, py + ty )
