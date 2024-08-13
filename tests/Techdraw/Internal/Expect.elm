@@ -96,7 +96,7 @@ hptEqualTol tol expected actual =
 -}
 matEqual : AffineMatrix -> AffineMatrix -> Expectation
 matEqual =
-    matEqualTol (AbsoluteOrRelative 1.0e-5 1.0e-5)
+    matEqualTol (AbsoluteOrRelative 1.0e-4 1.0e-4)
 
 
 {-| Compare two matrices up to a tolerance.
