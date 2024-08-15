@@ -2,7 +2,7 @@
 
 ![GitHub CI](https://github.com/lancelet/techdraw/actions/workflows/elm.yml/badge.svg)
 
-This package interoperates with the `svg` package in Elm. It provides its own affine
+This package is built on top of the `typed-svg` package in Elm. It provides its own affine
 transformation stack which tracks local-to-world and world-to-local coordinate transformations.
 This allows:
 
@@ -12,8 +12,6 @@ This allows:
 - Shortening paths to accommodate arrow heads.
 
 This is implemented as a tree of nodes which are interpreted at render time to `svg` nodes.
-The tree also includes an SVG breakout node, so that regular SVG can be interspersed with the
-technical drawing nodes.
 
 ## Tooling Notes
 
