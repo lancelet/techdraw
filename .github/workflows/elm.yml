@@ -38,4 +38,4 @@ jobs:
       - name: Compile Examples
         run: |
           echo "Compilng Examples"
-          pushd examples/hello-rect && elm make && popd
+          pushd examples/hello-rect && elm make ./src/Main.elm && popd
