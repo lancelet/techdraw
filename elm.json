@@ -8,7 +8,7 @@
     "exposed-modules": [
         "Techdraw.Internal.AffineMatrix",
         "Techdraw.Internal.BiTransform",
-        "Techdraw.Internal.PrimTree",
+        "Techdraw.Internal.Drawing",
         "Techdraw.Internal.RenderSVG"
     ],
     "elm-version": "0.19.1 <= v < 0.20.0",

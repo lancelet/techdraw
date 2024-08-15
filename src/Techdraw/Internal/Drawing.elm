@@ -1,4 +1,4 @@
-module Techdraw.Internal.PrimTree exposing (..)
+module Techdraw.Internal.Drawing exposing (..)
 
 {-| Drawing data type.
 -}
@@ -14,7 +14,7 @@ type Drawing msg
     = Drawing
         { size : DrawingSize
         , transform : BiTransform
-        , prim : PrimTree msg
+        , prim : Prim msg
         }
 
 
@@ -25,7 +25,7 @@ type DrawingSize
         }
 
 
-type PrimTree msg
+type Prim msg
     = PrimShape (Shape msg)
     | PrimGroup (Group msg)
 
@@ -43,7 +43,7 @@ type Group msg
         { events : Events msg
         , transform : BiTransform
         , style : Style
-        , children : List (PrimTree msg)
+        , children : List (Prim msg)
         }
 
 

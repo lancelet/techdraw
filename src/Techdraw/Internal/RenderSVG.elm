@@ -5,20 +5,20 @@ import Html exposing (Attribute)
 import Html.Events as E
 import Json.Decode as JD
 import Techdraw.Internal.BiTransform as BT
-import Techdraw.Internal.PrimTree as PT
+import Techdraw.Internal.Drawing as D
 import TypedSvg as S
 import TypedSvg.Attributes as A
 import TypedSvg.Core exposing (Svg)
 import TypedSvg.Types as ST exposing (px)
 
 
-render : PT.Drawing msg -> Svg msg
+render : D.Drawing msg -> Svg msg
 render drawing =
     let
         (ComputedSVGSize cds) =
             computeDrawingSize drawing
 
-        (PT.Drawing dwg) =
+        (D.Drawing dwg) =
             drawing
     in
     S.svg
@@ -33,18 +33,18 @@ render drawing =
         (renderPrim dwg.transform initStyle dwg.prim)
 
 
-renderPrim : BT.BiTransform -> DefinedStyle -> PT.PrimTree msg -> List (Svg msg)
+renderPrim : BT.BiTransform -> DefinedStyle -> D.Prim msg -> List (Svg msg)
 renderPrim localToWorld dstyle primtree =
     case primtree of
-        PT.PrimShape shape ->
+        D.PrimShape shape ->
             renderShape localToWorld dstyle shape
 
-        PT.PrimGroup group ->
+        D.PrimGroup group ->
             renderGroup localToWorld dstyle group
 
 
-renderShape : BT.BiTransform -> DefinedStyle -> PT.Shape msg -> List (Svg msg)
-renderShape clientToLocal dstyle (PT.Shape shape) =
+renderShape : BT.BiTransform -> DefinedStyle -> D.Shape msg -> List (Svg msg)
+renderShape clientToLocal dstyle (D.Shape shape) =
     let
         d : Attribute msg
         d =
@@ -68,8 +68,8 @@ renderShape clientToLocal dstyle (PT.Shape shape) =
 {-| In renderGroup, we just apply the group transform and push everything
 else down.
 -}
-renderGroup : BT.BiTransform -> DefinedStyle -> PT.Group msg -> List (Svg msg)
-renderGroup clientToLocal dstyle (PT.Group group) =
+renderGroup : BT.BiTransform -> DefinedStyle -> D.Group msg -> List (Svg msg)
+renderGroup clientToLocal dstyle (D.Group group) =
     let
         events : List (Attribute msg)
         events =
@@ -97,8 +97,8 @@ renderGroup clientToLocal dstyle (PT.Group group) =
 ---- Event Translation -------------------------------------------------------
 
 
-toSvgEventHandlers : BT.BiTransform -> PT.Events msg -> List (Attribute msg)
-toSvgEventHandlers clientToLocal (PT.Events events) =
+toSvgEventHandlers : BT.BiTransform -> D.Events msg -> List (Attribute msg)
+toSvgEventHandlers clientToLocal (D.Events events) =
     let
         mk name access =
             toSvgEventHandler name clientToLocal (access events)
@@ -115,16 +115,16 @@ toSvgEventHandlers clientToLocal (PT.Events events) =
         ]
 
 
-toSvgEventHandler : String -> BT.BiTransform -> PT.Handler msg -> Maybe (Attribute msg)
+toSvgEventHandler : String -> BT.BiTransform -> D.Handler msg -> Maybe (Attribute msg)
 toSvgEventHandler name clientToLocal handler =
     case handler of
-        PT.NoHandler ->
+        D.NoHandler ->
             Nothing
 
-        PT.NotifyHandler message ->
+        D.NotifyHandler message ->
             Just (E.on name (JD.succeed message))
 
-        PT.MouseEventHandler mkMessage ->
+        D.MouseEventHandler mkMessage ->
             let
                 decoder : JD.Decoder msg
                 decoder =
@@ -132,10 +132,10 @@ toSvgEventHandler name clientToLocal handler =
                         (\clientX clientY ->
                             let
                                 clientPt =
-                                    PT.Pt { x = clientX, y = clientY }
+                                    D.Pt { x = clientX, y = clientY }
 
                                 mouseEvent =
-                                    PT.MouseEvent
+                                    D.MouseEvent
                                         { clientToLocal = clientToLocal
                                         , client = clientPt
                                         }
@@ -161,14 +161,14 @@ type DefinedStyle
 
 type DefinedStroke
     = DefinedStroke
-        { color : PT.Color
+        { color : D.Color
         , width : Float
         }
 
 
 type DefinedFill
     = DefinedFill
-        { color : PT.Color
+        { color : D.Color
         }
 
 
@@ -193,13 +193,13 @@ toSvgDefinedFill (DefinedFill dfill) =
     ]
 
 
-toSvgPaint : PT.Color -> ST.Paint
+toSvgPaint : D.Color -> ST.Paint
 toSvgPaint color =
     ST.Paint (toSvgColor color)
 
 
-toSvgColor : PT.Color -> C.Color
-toSvgColor (PT.RGBA r g b a) =
+toSvgColor : D.Color -> C.Color
+toSvgColor (D.RGBA r g b a) =
     C.fromRgba { red = r, green = g, blue = b, alpha = a }
 
 
@@ -207,24 +207,24 @@ toSvgColor (PT.RGBA r g b a) =
 ---- Style Merging -----------------------------------------------------------
 
 
-mergeStyle : PT.Style -> DefinedStyle -> DefinedStyle
-mergeStyle (PT.Style style) (DefinedStyle dstyle) =
+mergeStyle : D.Style -> DefinedStyle -> DefinedStyle
+mergeStyle (D.Style style) (DefinedStyle dstyle) =
     DefinedStyle
         { stroke = mergeStroke style.stroke dstyle.stroke
         , fill = mergeFill style.fill dstyle.fill
         }
 
 
-mergeStroke : PT.Stroke -> DefinedStroke -> DefinedStroke
-mergeStroke (PT.Stroke stroke) (DefinedStroke dstroke) =
+mergeStroke : D.Stroke -> DefinedStroke -> DefinedStroke
+mergeStroke (D.Stroke stroke) (DefinedStroke dstroke) =
     DefinedStroke
         { color = Maybe.withDefault dstroke.color stroke.color
         , width = Maybe.withDefault dstroke.width stroke.width
         }
 
 
-mergeFill : PT.Fill -> DefinedFill -> DefinedFill
-mergeFill (PT.Fill fill) (DefinedFill dfill) =
+mergeFill : D.Fill -> DefinedFill -> DefinedFill
+mergeFill (D.Fill fill) (DefinedFill dfill) =
     DefinedFill
         { color = Maybe.withDefault dfill.color fill.color
         }
@@ -245,7 +245,7 @@ initStyle =
 initStroke : DefinedStroke
 initStroke =
     DefinedStroke
-        { color = PT.RGBA 0 0 0 1
+        { color = D.RGBA 0 0 0 1
         , width = 1.0
         }
 
@@ -253,7 +253,7 @@ initStroke =
 initFill : DefinedFill
 initFill =
     DefinedFill
-        { color = PT.RGBA 0 0 0 1
+        { color = D.RGBA 0 0 0 1
         }
 
 
@@ -272,10 +272,10 @@ type ComputedSVGSize
         }
 
 
-computeDrawingSize : PT.Drawing msg -> ComputedSVGSize
-computeDrawingSize (PT.Drawing dwg) =
+computeDrawingSize : D.Drawing msg -> ComputedSVGSize
+computeDrawingSize (D.Drawing dwg) =
     let
-        (PT.DrawingSizeFixed { width, height }) =
+        (D.DrawingSizeFixed { width, height }) =
             dwg.size
     in
     ComputedSVGSize
@@ -292,23 +292,23 @@ computeDrawingSize (PT.Drawing dwg) =
 ---- Path transformation -----------------------------------------------------
 
 
-transformPathToSvg : BT.BiTransform -> PT.Path -> Attribute msg
+transformPathToSvg : BT.BiTransform -> D.Path -> Attribute msg
 transformPathToSvg transform path =
     pathToSvg (transformPath transform path)
 
 
-pathToSvg : PT.Path -> Attribute msg
+pathToSvg : D.Path -> Attribute msg
 pathToSvg path =
     A.d (toSvgPath path)
 
 
-toSvgPath : PT.Path -> String
-toSvgPath (PT.Path subpaths) =
+toSvgPath : D.Path -> String
+toSvgPath (D.Path subpaths) =
     String.join " " (List.map toSvgSubPath subpaths)
 
 
-toSvgSubPath : PT.SubPath -> String
-toSvgSubPath (PT.SubPath moveTo commands) =
+toSvgSubPath : D.SubPath -> String
+toSvgSubPath (D.SubPath moveTo commands) =
     let
         strCommands =
             List.map toSvgCommand commands
@@ -316,109 +316,109 @@ toSvgSubPath (PT.SubPath moveTo commands) =
     toSvgMoveTo moveTo ++ " " ++ String.join " " strCommands
 
 
-toSvgCommand : PT.Command -> String
+toSvgCommand : D.Command -> String
 toSvgCommand command =
     case command of
-        PT.CommandLine lineTo ->
+        D.CommandLine lineTo ->
             toSvgLineTo lineTo
 
-        PT.CommandQuadraticBezier qb ->
+        D.CommandQuadraticBezier qb ->
             toSvgQuadraticBezierTo qb
 
-        PT.CommandCubicBezier cb ->
+        D.CommandCubicBezier cb ->
             toSvgCubicBezierTo cb
 
 
-toSvgMoveTo : PT.MoveTo -> String
-toSvgMoveTo (PT.MoveTo cpt) =
+toSvgMoveTo : D.MoveTo -> String
+toSvgMoveTo (D.MoveTo cpt) =
     "M " ++ toSvgCpt cpt
 
 
-toSvgLineTo : PT.LineTo -> String
-toSvgLineTo (PT.LineTo cpt) =
+toSvgLineTo : D.LineTo -> String
+toSvgLineTo (D.LineTo cpt) =
     "L " ++ toSvgCpt cpt
 
 
-toSvgQuadraticBezierTo : PT.QuadraticBezierTo -> String
-toSvgQuadraticBezierTo (PT.QuadraticBezierTo cpt1 cpt2) =
+toSvgQuadraticBezierTo : D.QuadraticBezierTo -> String
+toSvgQuadraticBezierTo (D.QuadraticBezierTo cpt1 cpt2) =
     "Q " ++ toSvgCpt cpt1 ++ " " ++ toSvgCpt cpt2
 
 
-toSvgCubicBezierTo : PT.CubicBezierTo -> String
-toSvgCubicBezierTo (PT.CubicBezierTo cpt1 cpt2 cpt3) =
+toSvgCubicBezierTo : D.CubicBezierTo -> String
+toSvgCubicBezierTo (D.CubicBezierTo cpt1 cpt2 cpt3) =
     "C " ++ toSvgCpt cpt1 ++ " " ++ toSvgCpt cpt2 ++ " " ++ toSvgCpt cpt3
 
 
-toSvgCpt : PT.Cpt -> String
-toSvgCpt (PT.Cpt cpt) =
+toSvgCpt : D.Cpt -> String
+toSvgCpt (D.Cpt cpt) =
     String.fromFloat cpt.x ++ " " ++ String.fromFloat cpt.y
 
 
-transformPath : BT.BiTransform -> PT.Path -> PT.Path
-transformPath transform (PT.Path subPaths) =
-    PT.Path (List.map (transformSubPath transform) subPaths)
+transformPath : BT.BiTransform -> D.Path -> D.Path
+transformPath transform (D.Path subPaths) =
+    D.Path (List.map (transformSubPath transform) subPaths)
 
 
-transformSubPath : BT.BiTransform -> PT.SubPath -> PT.SubPath
-transformSubPath transform (PT.SubPath moveTo commands) =
-    PT.SubPath
+transformSubPath : BT.BiTransform -> D.SubPath -> D.SubPath
+transformSubPath transform (D.SubPath moveTo commands) =
+    D.SubPath
         (transformMoveTo transform moveTo)
         (List.map (transformCommand transform) commands)
 
 
-transformCommand : BT.BiTransform -> PT.Command -> PT.Command
+transformCommand : BT.BiTransform -> D.Command -> D.Command
 transformCommand transform command =
     case command of
-        PT.CommandLine lineTo ->
-            PT.CommandLine <| transformLineTo transform lineTo
+        D.CommandLine lineTo ->
+            D.CommandLine <| transformLineTo transform lineTo
 
-        PT.CommandQuadraticBezier qbTo ->
-            PT.CommandQuadraticBezier <|
+        D.CommandQuadraticBezier qbTo ->
+            D.CommandQuadraticBezier <|
                 transformQuadraticBezierTo transform qbTo
 
-        PT.CommandCubicBezier cbTo ->
-            PT.CommandCubicBezier <|
+        D.CommandCubicBezier cbTo ->
+            D.CommandCubicBezier <|
                 transformCubicBezierTo transform cbTo
 
 
-transformMoveTo : BT.BiTransform -> PT.MoveTo -> PT.MoveTo
-transformMoveTo transform (PT.MoveTo cpt) =
-    PT.MoveTo (transformCpt transform cpt)
+transformMoveTo : BT.BiTransform -> D.MoveTo -> D.MoveTo
+transformMoveTo transform (D.MoveTo cpt) =
+    D.MoveTo (transformCpt transform cpt)
 
 
-transformLineTo : BT.BiTransform -> PT.LineTo -> PT.LineTo
-transformLineTo transform (PT.LineTo cpt) =
-    PT.LineTo (transformCpt transform cpt)
+transformLineTo : BT.BiTransform -> D.LineTo -> D.LineTo
+transformLineTo transform (D.LineTo cpt) =
+    D.LineTo (transformCpt transform cpt)
 
 
 transformQuadraticBezierTo :
     BT.BiTransform
-    -> PT.QuadraticBezierTo
-    -> PT.QuadraticBezierTo
-transformQuadraticBezierTo transform (PT.QuadraticBezierTo cpt1 cpt2) =
+    -> D.QuadraticBezierTo
+    -> D.QuadraticBezierTo
+transformQuadraticBezierTo transform (D.QuadraticBezierTo cpt1 cpt2) =
     let
         xpt =
             transformCpt transform
     in
-    PT.QuadraticBezierTo (xpt cpt1) (xpt cpt2)
+    D.QuadraticBezierTo (xpt cpt1) (xpt cpt2)
 
 
 transformCubicBezierTo :
     BT.BiTransform
-    -> PT.CubicBezierTo
-    -> PT.CubicBezierTo
-transformCubicBezierTo transform (PT.CubicBezierTo cpt1 cpt2 cpt3) =
+    -> D.CubicBezierTo
+    -> D.CubicBezierTo
+transformCubicBezierTo transform (D.CubicBezierTo cpt1 cpt2 cpt3) =
     let
         xpt =
             transformCpt transform
     in
-    PT.CubicBezierTo (xpt cpt1) (xpt cpt2) (xpt cpt3)
+    D.CubicBezierTo (xpt cpt1) (xpt cpt2) (xpt cpt3)
 
 
-transformCpt : BT.BiTransform -> PT.Cpt -> PT.Cpt
-transformCpt transform (PT.Cpt pt) =
+transformCpt : BT.BiTransform -> D.Cpt -> D.Cpt
+transformCpt transform (D.Cpt pt) =
     let
         ( x, y ) =
             BT.applyFwd transform ( pt.x, pt.y )
     in
-    PT.Cpt { x = x, y = y }
+    D.Cpt { x = x, y = y }
