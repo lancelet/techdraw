@@ -1,4 +1,4 @@
-module Techdraw.Internal.RenderSVG exposing (render)
+module Techdraw.Internal.RenderSvg exposing (render)
 
 import Color as C
 import Html exposing (Attribute)
