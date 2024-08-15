@@ -4,15 +4,18 @@ module Main exposing (..)
 
 All this is to draw a rectangle.
 
-TODO: Improve the API.
-
 -}
 
 import Browser
+import Color exposing (..)
 import Html exposing (..)
-import Techdraw.Internal.BiTransform as BT
-import Techdraw.Internal.Drawing exposing (..)
-import Techdraw.Internal.RenderSvg exposing (render)
+import Techdraw exposing (Drawing, path, render, withFill, transform)
+import Techdraw.Math exposing (affScale, Scale(..))
+import Techdraw.Internal.Util exposing (unsafeForceMaybe)
+import Techdraw.PathBuilder as PathBuilder exposing (close, createPath, lineTo, moveTo)
+import TypedSvg exposing (svg)
+import TypedSvg.Attributes exposing (height, viewBox, width)
+import TypedSvg.Types exposing (Paint(..), px)
 
 
 type Model
@@ -28,86 +31,46 @@ type Msg
 
 init : Model
 init =
-    Model { color = RGBA 0 0 0 1 }
+    Model { color = black }
 
 
-path =
-    Path
-        [ SubPath (MoveTo (Cpt { x = 20, y = 20 }))
-            [ CommandLine (LineTo (Cpt { x = 20, y = 80 }))
-            , CommandLine (LineTo (Cpt { x = 80, y = 80 }))
-            , CommandLine (LineTo (Cpt { x = 80, y = 20 }))
-            , CommandClose
-            ]
-        ]
+rectangle =
+    PathBuilder.empty
+        |> moveTo ( 2, 2 )
+        |> lineTo ( 2, 8 )
+        |> lineTo ( 8, 8 )
+        |> lineTo ( 8, 2 )
+        |> close
+        |> createPath
+        |> unsafeForceMaybe "Path should be valid."
 
 
-events =
-    Events
-        { onClick = NoHandler
-        , onDoubleClick = NoHandler
-        , onMouseDown = NoHandler
-        , onMouseUp = NoHandler
-        , onMouseEnter = NotifyHandler MouseEnter
-        , onMouseLeave = NotifyHandler MouseExit
-        , onMouseOver = NoHandler
-        , onMouseOut = NoHandler
-        }
-
-
-mkFill : Color -> Fill
-mkFill color =
-    Fill { color = Just color }
-
-
-stroke =
-    Stroke { color = Nothing, width = Nothing }
-
-
-mkStyle : Color -> Style
-mkStyle color =
-    Style { stroke = stroke, fill = mkFill color }
-
-
-mkPrim : Color -> Prim Msg
-mkPrim color =
-    PrimShape <|
-        Shape
-            { events = events
-            , style = mkStyle color
-            , path = path
-            }
-
-
-drawingSize =
-    DrawingSizeFixed
-        { width = 100
-        , height = 100
-        }
-
-
-mkDrawing : Color -> Drawing Msg
-mkDrawing color =
-    Drawing
-        { size = drawingSize
-        , transform = BT.identity
-        , prim = mkPrim color
-        }
+drawing : Drawing msg
+drawing =
+    path rectangle
+        |> withFill (Paint red)
+        |> transform (affScale <| Scale 2 2)
+        |> transform (affScale <| Scale 5 5)
 
 
 view : Model -> Html Msg
 view (Model model) =
-    render (mkDrawing model.color)
+    svg
+        [ width (px 100)
+        , height (px 100)
+        , viewBox 0 0 100 100
+        ]
+        [ render drawing ]
 
 
 update : Msg -> Model -> Model
 update msg (Model model) =
     case msg of
         MouseEnter ->
-            Model { model | color = RGBA 1 0 0 1 }
+            Model { model | color = red }
 
         MouseExit ->
-            Model { model | color = RGBA 0 0 0 1 }
+            Model { model | color = black }
 
 
 main =

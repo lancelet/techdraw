@@ -28,3 +28,10 @@ For local documentation preview, use [elm-doc-preview](https://github.com/dmy/el
 ```sh
 elm-doc-preview
 ```
+
+## TODO
+
+- Consider creating an empty path type so that `createPath` always returns a `Path`.
+- Add attributes / styles when rendering.
+- Add events.
+- Add post-path rendering hook.
