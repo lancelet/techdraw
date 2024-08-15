@@ -83,6 +83,7 @@ type Command
     = CommandLine LineTo
     | CommandQuadraticBezier QuadraticBezierTo
     | CommandCubicBezier CubicBezierTo
+    | CommandClose
 
 
 type MoveTo

@@ -328,6 +328,9 @@ toSvgCommand command =
         D.CommandCubicBezier cb ->
             toSvgCubicBezierTo cb
 
+        D.CommandClose ->
+            "Z"
+
 
 toSvgMoveTo : D.MoveTo -> String
 toSvgMoveTo (D.MoveTo cpt) =
@@ -379,6 +382,9 @@ transformCommand transform command =
         D.CommandCubicBezier cbTo ->
             D.CommandCubicBezier <|
                 transformCubicBezierTo transform cbTo
+
+        D.CommandClose ->
+            D.CommandClose
 
 
 transformMoveTo : BT.BiTransform -> D.MoveTo -> D.MoveTo
