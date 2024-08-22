@@ -9,9 +9,9 @@ All this is to draw a rectangle.
 import Browser
 import Color exposing (..)
 import Html exposing (..)
-import Techdraw exposing (Drawing, path, render, withFill, transform)
-import Techdraw.Math exposing (affScale, Scale(..))
+import Techdraw exposing (Drawing, fill, path, render, stroke, strokeWidth, transform)
 import Techdraw.Internal.Util exposing (unsafeForceMaybe)
+import Techdraw.Math exposing (Scale(..), affScale)
 import Techdraw.PathBuilder as PathBuilder exposing (close, createPath, lineTo, moveTo)
 import TypedSvg exposing (svg)
 import TypedSvg.Attributes exposing (height, viewBox, width)
@@ -31,7 +31,7 @@ type Msg
 
 init : Model
 init =
-    Model { color = black }
+    Model { color = red }
 
 
 rectangle =
@@ -45,22 +45,24 @@ rectangle =
         |> unsafeForceMaybe "Path should be valid."
 
 
-drawing : Drawing msg
-drawing =
+drawing : Model -> Drawing msg
+drawing (Model model) =
     path rectangle
-        |> withFill (Paint red)
+        |> fill (Paint model.color)
+        |> stroke (Paint black)
+        |> strokeWidth 2
         |> transform (affScale <| Scale 2 2)
         |> transform (affScale <| Scale 5 5)
 
 
 view : Model -> Html Msg
-view (Model model) =
+view model =
     svg
         [ width (px 100)
         , height (px 100)
         , viewBox 0 0 100 100
         ]
-        [ render drawing ]
+        [ drawing model |> render ]
 
 
 update : Msg -> Model -> Model
@@ -70,7 +72,7 @@ update msg (Model model) =
             Model { model | color = red }
 
         MouseExit ->
-            Model { model | color = black }
+            Model { model | color = blue }
 
 
 main =
