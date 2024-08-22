@@ -21,7 +21,6 @@ module Techdraw.Math.Fuzzer exposing
 
 import Fuzz exposing (Fuzzer, floatRange)
 import List.Nonempty as Nonempty exposing (Nonempty)
-import Techdraw.Internal.Util exposing (unsafeForceMaybe)
 import Techdraw.Math as Math
     exposing
         ( AffineTransform(..)
@@ -46,6 +45,7 @@ import Techdraw.Math as Math
         , Translation(..)
         , V2(..)
         )
+import Techdraw.Util exposing (unsafeForceMaybe)
 
 
 

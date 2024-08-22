@@ -1,7 +1,9 @@
 module Techdraw exposing
     ( Drawing
-    , render
+    , ViewBox
+    , render, renderSvgElement
     , empty, path, svg, group, transform
+    , translate, rotateAbout, skewX
     , style
     , fill, stroke, strokeWidth
     , onClick, onContextMenu, onDblClick, onMouseDown
@@ -14,7 +16,7 @@ module Techdraw exposing
     , styleAppendDecorator, styleAppendAttribute
     , styleGetDecorators, styleGetAttributes
     , Decorator(..)
-    , MouseInfo(..)
+    , MouseInfo, ModifierKeys, MouseButton
     )
 
 {-|
@@ -26,11 +28,12 @@ module Techdraw exposing
 ## Types
 
 @docs Drawing
+@docs ViewBox
 
 
 ## Creating SVG
 
-@docs render
+@docs render, renderSvgElement
 
 
 ## Creating Drawings
@@ -43,10 +46,7 @@ module Techdraw exposing
 
 ### Derived Operations
 
-TODO:
-
-  - Rectangle
-  - Circle
+@docs translate, rotateAbout, skewX
 
 
 ## Styling drawings
@@ -79,10 +79,11 @@ TODO:
 
 # Event information
 
-@docs MouseInfo
+@docs MouseInfo, ModifierKeys, MouseButton
 
 -}
 
+import Html exposing (Html)
 import Html.Events as HtmlEvents
 import Json.Decode as Decode exposing (Decoder)
 import Techdraw.Math as Math
@@ -90,15 +91,16 @@ import Techdraw.Math as Math
         ( AffineTransform(..)
         , P2
         , Path
+        , affApplyP2
         , affApplyPath
-        , affIdentity
+        , affInvert
         , affMul
         , toSvgPPath
         )
-import TypedSvg exposing (g)
+import TypedSvg
 import TypedSvg.Attributes as SvgAttributes
 import TypedSvg.Core exposing (Svg)
-import TypedSvg.Types exposing (Paint, px)
+import TypedSvg.Types exposing (Display(..), Paint, px)
 import VirtualDom exposing (Attribute)
 
 
@@ -153,6 +155,43 @@ transform parentTransform drawing =
 
         _ ->
             DrawingTransformed parentTransform drawing
+
+
+{-| Translate a drawing.
+-}
+translate : ( Float, Float ) -> Drawing msg -> Drawing msg
+translate ( tx, ty ) =
+    let
+        xform =
+            Math.affTranslate <| Math.Translation tx ty
+    in
+    transform xform
+
+
+{-| Rotate clockwise by a value in degrees about a point.
+-}
+rotateAbout : Float -> ( Float, Float ) -> Drawing msg -> Drawing msg
+rotateAbout angle ( xc, yc ) =
+    let
+        xform =
+            Math.affFromComponents
+                [ Math.ComponentTranslation <| Math.Translation -xc -yc
+                , Math.ComponentRotation <| Math.Rotation <| Math.angle2Pi <| angle * pi / 180
+                , Math.ComponentTranslation <| Math.Translation xc yc
+                ]
+    in
+    transform xform
+
+
+{-| Skew along the x-axis by a value in degrees.
+-}
+skewX : Float -> Drawing msg -> Drawing msg
+skewX angle =
+    let
+        xform =
+            Math.affShearX <| Math.ShearX <| tan <| angle * pi / 180
+    in
+    transform xform
 
 
 {-| Group drawings.
@@ -557,13 +596,13 @@ type EventListener msg
 
 {-| Information about a mouse event.
 -}
-type MouseInfo
-    = MouseInfo
-        { worldPt : P2
-        , button : MouseButton
-        , modifiers : ModifierKeys
-        , localToWorld : AffineTransform
-        }
+type alias MouseInfo =
+    { worldPt : P2
+    , button : MouseButton
+    , modifiers : ModifierKeys
+    , localToWorld : AffineTransform
+    , localPtFn : () -> P2
+    }
 
 
 {-| Mouse button.
@@ -579,13 +618,12 @@ type MouseButton
 
 {-| Modifier key state.
 -}
-type ModifierKeys
-    = ModifierKeys
-        { ctrl : Bool
-        , shift : Bool
-        , alt : Bool
-        , meta : Bool
-        }
+type alias ModifierKeys =
+    { ctrl : Bool
+    , shift : Bool
+    , alt : Bool
+    , meta : Bool
+    }
 
 
 {-| A MouseHandler event.
@@ -656,12 +694,12 @@ mouseInfo : AffineTransform -> Decoder MouseInfo
 mouseInfo localToWorld =
     Decode.map3
         (\worldPt btn mods ->
-            MouseInfo
-                { worldPt = worldPt
-                , button = btn
-                , modifiers = mods
-                , localToWorld = localToWorld
-                }
+            { worldPt = worldPt
+            , button = btn
+            , modifiers = mods
+            , localToWorld = localToWorld
+            , localPtFn = \() -> affApplyP2 (affInvert localToWorld) worldPt
+            }
         )
         clientP2
         mouseButton
@@ -713,12 +751,11 @@ modifiers : Decoder ModifierKeys
 modifiers =
     Decode.map4
         (\ctrl shift alt meta ->
-            ModifierKeys
-                { ctrl = ctrl
-                , shift = shift
-                , alt = alt
-                , meta = meta
-                }
+            { ctrl = ctrl
+            , shift = shift
+            , alt = alt
+            , meta = meta
+            }
         )
         ctrlKey
         shiftKey
@@ -765,11 +802,48 @@ metaKey =
 ---- Rendering ----------------------------------------------------------------
 
 
-{-| Render a diagram to SVG.
+{-| Viewbox for a drawing.
+
+This should typiecally be the same viewbox that SVG uses.
+
+The default coordinate system of a `Drawing` has the origin at the bottom
+left. The x-axis increases to the right, and the y-axis increases upwards.
+
 -}
-render : Drawing msg -> Svg msg
-render =
-    renderWithState initState
+type alias ViewBox =
+    { minX : Float
+    , minY : Float
+    , width : Float
+    , height : Float
+    }
+
+
+{-| Render a diagram to a stand-alone SVG image.
+
+This creates an SVG element whose pixel size is the same as the
+height and width of the `ViewBox`.
+
+-}
+render : ViewBox -> Drawing msg -> Html msg
+render viewBox drawing =
+    TypedSvg.svg
+        [ SvgAttributes.width (px viewBox.width)
+        , SvgAttributes.height (px viewBox.height)
+        , SvgAttributes.viewBox
+            viewBox.minX
+            viewBox.minY
+            viewBox.width
+            viewBox.height
+        ]
+        [ renderSvgElement viewBox drawing
+        ]
+
+
+{-| Render a diagram to an SVG element.
+-}
+renderSvgElement : ViewBox -> Drawing msg -> Svg msg
+renderSvgElement viewBox =
+    renderWithState (initState viewBox)
 
 
 type State msg
@@ -777,15 +851,25 @@ type State msg
         { style : Style msg
         , events : Events msg
         , localToWorld : AffineTransform
+        , viewBox : ViewBox
         }
 
 
-initState : State msg
-initState =
+initState : ViewBox -> State msg
+initState viewBox =
+    let
+        localToWorld =
+            Math.affFromComponents
+                [ Math.ComponentScale <| Math.Scale 1 -1
+                , Math.ComponentTranslation <| Math.Translation 0 viewBox.height
+                , Math.ComponentTranslation <| Math.Translation viewBox.minX viewBox.minY
+                ]
+    in
     State
         { style = styleDefault
         , events = emptyEvents
-        , localToWorld = affIdentity
+        , localToWorld = localToWorld
+        , viewBox = viewBox
         }
 
 
@@ -802,6 +886,11 @@ stateEvents (State state) =
 stateLocalToWorld : State msg -> AffineTransform
 stateLocalToWorld (State state) =
     state.localToWorld
+
+
+stateViewBox : State msg -> ViewBox
+stateViewBox (State state) =
+    state.viewBox
 
 
 stateCombineStyles : State msg -> Style msg -> State msg
@@ -846,27 +935,34 @@ renderWithState state drawing =
     in
     case drawing of
         DrawingEmpty ->
-            g [] []
+            TypedSvg.g [] []
 
         DrawingPath pth ->
             if List.isEmpty decorators then
                 -- The style has no decorators. This means the path has no
                 -- further processing required and will be dumped to SVG
                 -- directly.
-                let
-                    styleAttributes =
-                        styleToAttributes styl
+                case pth of
+                    Math.EmptyPath ->
+                        -- For an empty path, we dump out an empty group, with
+                        -- a `display = "none"` attribute.
+                        TypedSvg.g [ SvgAttributes.display DisplayNone ] []
 
-                    eventAttributes =
-                        eventsToAttributes localToWorld events
+                    Math.Path _ ->
+                        let
+                            styleAttributes =
+                                styleToAttributes styl
 
-                    pathAttr =
-                        affApplyPath localToWorld pth |> toSvgPPath |> SvgAttributes.d
+                            eventAttributes =
+                                eventsToAttributes localToWorld events
 
-                    attributes =
-                        pathAttr :: (styleAttributes ++ eventAttributes)
-                in
-                TypedSvg.path attributes []
+                            pathAttr =
+                                affApplyPath localToWorld pth |> toSvgPPath |> SvgAttributes.d
+
+                            attributes =
+                                pathAttr :: (styleAttributes ++ eventAttributes)
+                        in
+                        TypedSvg.path attributes []
 
             else
                 -- The style has decorators, so we must process them to
@@ -879,7 +975,7 @@ renderWithState state drawing =
                 in
                 List.map (\(Decorator f) -> f styl localToWorld xfpath) decorators
                     |> group
-                    |> renderWithState initState
+                    |> renderWithState (initState (stateViewBox state))
 
         DrawingSvg mkSvgChild ->
             mkSvgChild styl localToWorld
@@ -891,7 +987,7 @@ renderWithState state drawing =
             renderWithState (stateComposeTransform state childToParent) childDrawing
 
         DrawingGroup children ->
-            g [] <| List.map (renderWithState state) children
+            TypedSvg.g [] <| List.map (renderWithState state) children
 
         DrawingEvents evts childDrawing ->
             renderWithState (stateCombineEvents state evts) childDrawing

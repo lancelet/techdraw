@@ -1,4 +1,4 @@
-module Techdraw.Internal.Util exposing (unsafeForceMaybe)
+module Techdraw.Util exposing (unsafeForceMaybe)
 
 {-| Utility functions.
 

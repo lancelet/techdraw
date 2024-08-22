@@ -1,5 +1,5 @@
 module Techdraw.Math exposing
-    ( sq
+    ( sq, clamp
     , Angle2Pi, AnglePi, OrientationPi
     , angle2Pi, anglePi, orientationPi
     , getAngle2Pi, getAnglePi, getOrientationPi
@@ -33,6 +33,9 @@ module Techdraw.Math exposing
     , pathCommandEnd
     , subPathToJoinedCurves, joinedCurvesToSubPath
     , toSvgPPath
+    , ellipseRadiiToBiasedAxes
+    , ellipseImplicits
+    , ellipseImplicitsToAxes
     )
 
 {-| Mathematical types and operations.
@@ -40,7 +43,7 @@ module Techdraw.Math exposing
 
 # Floating-Point
 
-@docs sq
+@docs sq, clamp
 
 
 # Angles
@@ -157,10 +160,16 @@ provided for this are the following:
 @docs subPathToJoinedCurves, joinedCurvesToSubPath
 @docs toSvgPPath
 
+
+# Special Operations on Ellipses
+
+@docs ellipseRadiiToBiasedAxes
+@docs ellipseImplicits
+@docs ellipseImplicitsToAxes
+
 -}
 
 import List.Nonempty as Nonempty exposing (Nonempty)
-import Techdraw.Internal.Util exposing (unsafeForceMaybe)
 
 
 
@@ -172,6 +181,20 @@ import Techdraw.Internal.Util exposing (unsafeForceMaybe)
 sq : Float -> Float
 sq x =
     x * x
+
+
+{-| Clamp a value.
+-}
+clamp : ( Float, Float ) -> Float -> Float
+clamp ( minValue, maxValue ) value =
+    if value < minValue then
+        minValue
+
+    else if value > maxValue then
+        maxValue
+
+    else
+        value
 
 
 
@@ -961,21 +984,22 @@ affApplyCBezier m (CBezier a b c d) =
 affApplyArc : AffineTransform -> Arc -> Arc
 affApplyArc m (Arc arc) =
     let
-        -- Extract affine transformation parameters.
-        (AffineTransform affineParam) =
-            m
-
         -- Find the ellipse implicits (as though it were at the origin).
         implicits =
-            calcEllipseImplicits { rx = arc.rx, ry = arc.ry, xOrient = arc.xOrient }
+            { rx = arc.rx, ry = arc.ry, xOrient = arc.xOrient }
+                |> ellipseRadiiToBiasedAxes
+                |> ellipseImplicits
 
         -- Convert the implicits to matrix form.
         implMat =
             m22 implicits.a (implicits.b / 2) (implicits.b / 2) implicits.c
 
+        (AffineTransform minv) =
+            affInvert m
+
         -- Transform the implicit matrix to new coordinates: M^T * (implicits) * M
         (M22 transformedImplMat) =
-            m22Mul (m22Transpose affineParam.linear) (m22Mul implMat affineParam.linear)
+            m22Mul (m22Transpose minv.linear) (m22Mul implMat minv.linear)
 
         -- Re-package transformed implicits.
         transformedImplicits =
@@ -985,15 +1009,15 @@ affApplyArc m (Arc arc) =
             }
 
         -- Transform implicits back to ellipse axis parameters.
-        { semiMajor, semiMinor, orientation } =
-            ellipseImplicitsToAxisForm transformedImplicits
+        { semiMajor, semiMinor, theta } =
+            ellipseImplicitsToAxes transformedImplicits
     in
     Arc
         { start = affApplyP2 m arc.start
         , end = affApplyP2 m arc.end
         , rx = semiMajor
         , ry = semiMinor
-        , xOrient = orientation
+        , xOrient = theta
         , large = arc.large
         , sweep = arc.sweep
         }
@@ -1024,136 +1048,6 @@ affApplyJoinedCurves m jcs =
     unJoinedCurves jcs |> Nonempty.map (affApplyCurve m) |> JoinedCurves
 
 
-{-| Axis representation of an ellipse centred at the origin.
-
-This is the semi-major axis, the semi-minor axis and the orientation of the
-semi-major axis.
-
--}
-type alias EllipseAxisForm =
-    { semiMajor : Float
-    , semiMinor : Float
-    , orientation : OrientationPi
-    }
-
-
-{-| Convert arc parameters to an ellipse axis form.
-
-This figures out which of the x or y directions of the arc are the semimajor
-and semiminor radii, and normalizes the angle of the arc to an orientation.
-
--}
-calcEllipseAxisForm :
-    { rx : Float, ry : Float, xOrient : OrientationPi }
-    -> EllipseAxisForm
-calcEllipseAxisForm arc =
-    let
-        rx =
-            abs arc.rx
-
-        ry =
-            abs arc.ry
-    in
-    if rx >= ry then
-        { semiMajor = rx
-        , semiMinor = ry
-        , orientation = arc.xOrient
-        }
-
-    else
-        { semiMajor = ry
-        , semiMinor = rx
-        , orientation = getOrientationPi arc.xOrient + (pi / 2) |> orientationPi
-        }
-
-
-{-| Implicit parameters for an ellipse centred at the origin.
-
-Coordinates lying on an ellipse which is centred at the origin satisfy the
-following equation:
-
-    a * sq x + b * x * y + c * sq y - 1 = 0
-
-See:
-[General ellipse representation (Wikipedia)](https://en.wikipedia.org/wiki/Ellipse#General_ellipse)
-
--}
-type alias EllipseImplicits =
-    { a : Float
-    , b : Float
-    , c : Float
-    }
-
-
-{-| Calculate the ellipse implicit parameters for an arc.
-
-This treats the Arc as though it is centred at the origin.
-
-<https://www.desmos.com/calculator/ix4muysoej>
-
--}
-calcEllipseImplicits :
-    { rx : Float, ry : Float, xOrient : OrientationPi }
-    -> EllipseImplicits
-calcEllipseImplicits arc =
-    let
-        { semiMajor, semiMinor, orientation } =
-            calcEllipseAxisForm arc
-
-        cos_theta =
-            cos <| getOrientationPi orientation
-
-        sin_theta =
-            sin <| getOrientationPi orientation
-
-        cos2_theta =
-            sq cos_theta
-
-        sin2_theta =
-            sq sin_theta
-
-        cs =
-            cos_theta * sin_theta
-
-        a2 =
-            sq semiMajor
-
-        b2 =
-            sq semiMinor
-    in
-    { a = cos2_theta / a2 + sin2_theta / b2
-    , b = 2 * cs / a2 - 2 * cs / b2
-    , c = sin2_theta / a2 + cos2_theta / b2
-    }
-
-
-{-| Convert the implicit form of an ellipse centred at the origin to its
-axis form.
--}
-ellipseImplicitsToAxisForm : EllipseImplicits -> EllipseAxisForm
-ellipseImplicitsToAxisForm e =
-    let
-        c1 =
-            sq e.b
-
-        c2 =
-            c1 - 4 * e.a * e.c
-
-        c3 =
-            e.a + e.c
-
-        c4 =
-            sqrt (sq (e.a - e.c) + c1)
-
-        c5 =
-            -2 * c2
-    in
-    { semiMajor = -1 * sqrt (c5 * (c3 + c4)) / c2
-    , semiMinor = -1 * sqrt (c5 * (c3 - c4)) / c2
-    , orientation = atan2 -e.b (e.c - e.a) / 2 |> orientationPi
-    }
-
-
 {-| Result of normalizing an `Arc`.
 -}
 type ArcNormOutput
@@ -1181,15 +1075,12 @@ normalizeArc (Arc a) =
 
     else
         let
-            { semiMajor, semiMinor, orientation } =
-                calcEllipseAxisForm
-                    { rx = a.rx
-                    , ry = a.ry
-                    , xOrient = a.xOrient
-                    }
+            { semiMajor, semiMinor, theta } =
+                ellipseRadiiToBiasedAxes
+                    { rx = a.rx, ry = a.ry, xOrient = a.xOrient }
 
             (V2 prime) =
-                arcPrime { start = a.start, end = a.end, xOrient = orientation }
+                arcPrime { start = a.start, end = a.end, xOrient = theta }
 
             l =
                 sq prime.e1 / sq semiMajor + sq prime.e2 / sq semiMinor
@@ -1210,7 +1101,7 @@ normalizeArc (Arc a) =
             , end = a.end
             , rx = rx
             , ry = ry
-            , xOrient = orientation
+            , xOrient = theta
             , large = a.large
             , sweep = a.sweep
             }
@@ -1219,7 +1110,8 @@ normalizeArc (Arc a) =
 
 {-| Compute some "primed" coordinates on an arc. This is a utility function.
 
-This corresponds to the result for Equation 5.1 here: <https://www.w3.org/TR/SVG/implnote.html>
+This corresponds to the result for Equation 5.1 here:
+<https://www.w3.org/TR/SVG/implnote.html>
 
 -}
 arcPrime :
@@ -1230,20 +1122,26 @@ arcPrime :
     -> V2
 arcPrime a =
     let
-        angle =
+        xOrientF =
             a.xOrient |> getOrientationPi
 
         c =
-            cos angle
+            cos xOrientF
 
         s =
-            sin angle
+            sin xOrientF
 
         m =
             m22 c s -s c
 
+        ( x1, y1 ) =
+            ( p2x a.start, p2y a.start )
+
+        ( x2, y2 ) =
+            ( p2x a.end, p2y a.end )
+
         v =
-            v2 ((p2x a.start - p2x a.end) / 2) ((p2y a.start - p2y a.end) / 2)
+            v2Div 2 <| v2 (x1 - x2) (y1 - y2)
     in
     m22v2Mul m v
 
@@ -1365,13 +1263,7 @@ pathCommandEnd cmd =
 -}
 type Path
     = Path (Nonempty SubPath)
-
-
-{-| Extract the `SubPath` components from a `Path`.
--}
-unPath : Path -> Nonempty SubPath
-unPath (Path s) =
-    s
+    | EmptyPath
 
 
 {-| Convert a `SubPath` to a `JoinedCurves`.
@@ -1393,12 +1285,20 @@ subPathToJoinedCurves sp =
                     go (pathCommandEnd cmd)
                         (attachStartPathCommandToCurve start cmd :: curves)
                         rem
+
+        -- This exists so we can unwrap a Maybe that we know is
+        -- always a Just.
+        dummy_curves =
+            JoinedCurves <|
+                Nonempty.singleton <|
+                    CurveLine <|
+                        Line (p2 0 0) (p2 100 100)
     in
     go (subPathStart sp) [] (subPathCommands sp |> Nonempty.toList)
         |> List.reverse
         |> Nonempty.fromList
-        |> unsafeForceMaybe "Subpaths must always contain at least one drawing command"
-        |> JoinedCurves
+        |> Maybe.map JoinedCurves
+        |> Maybe.withDefault dummy_curves
 
 
 {-| Convert a `PathCommand` to a `Curve` by attaching its starting point.
@@ -1493,9 +1393,14 @@ affApplySubPath m subpath =
 -}
 affApplyPath : AffineTransform -> Path -> Path
 affApplyPath m path =
-    unPath path
-        |> Nonempty.map (affApplySubPath m)
-        |> Path
+    case path of
+        EmptyPath ->
+            EmptyPath
+
+        Path pth ->
+            pth
+                |> Nonempty.map (affApplySubPath m)
+                |> Path
 
 
 {-| Normalize a `SubPath`.
@@ -1572,7 +1477,7 @@ toSvgPArcTo (ArcTo arc) =
         ++ " "
         ++ String.fromFloat arc.ry
         ++ " "
-        ++ (String.fromFloat <| getOrientationPi <| arc.xOrient)
+        ++ (String.fromFloat <| (\r -> r * 180 / pi) <| getOrientationPi <| arc.xOrient)
         ++ " "
         ++ large
         ++ " "
@@ -1626,7 +1531,159 @@ toSvgPSubPath subpath =
 -}
 toSvgPPath : Path -> String
 toSvgPPath path =
-    unPath path
-        |> Nonempty.map toSvgPSubPath
-        |> Nonempty.toList
-        |> String.join " "
+    case path of
+        EmptyPath ->
+            ""
+
+        Path pth ->
+            pth
+                |> Nonempty.map toSvgPSubPath
+                |> Nonempty.toList
+                |> String.join " "
+
+
+
+---- Ellipse Operations -------------------------------------------------------
+
+
+{-| Convert ellipse parameters that are expressed without an axis bias to
+parameters that have an explicit semi-major and semi-minor axis.
+
+The ellipse parameters are the following:
+
+  - `rx`: radius of the ellipse's local x-axis
+  - `ry`: radius of the ellipse's local y-axis
+  - `xOrient`: angle between the parent coordinate system's x-axis and the
+    ellipse's x-axis
+
+In this form, there is no indication whether x or y is the semi-major axis.
+This function converts the parameters into an explicitly-biased
+representation, to produce:
+
+  - `semiMajor`: radius of the semi-major axis
+  - `semiMinor`: radius of the semi-minor axis
+  - `theta`: angle between the parent coordinate system's x-axis and the
+    semi-major axis
+
+-}
+ellipseRadiiToBiasedAxes :
+    { rx : Float
+    , ry : Float
+    , xOrient : OrientationPi
+    }
+    ->
+        { semiMajor : Float
+        , semiMinor : Float
+        , theta : OrientationPi
+        }
+ellipseRadiiToBiasedAxes r =
+    let
+        ( rx, ry ) =
+            ( abs r.rx, abs r.ry )
+    in
+    if rx > ry then
+        { semiMajor = rx, semiMinor = ry, theta = r.xOrient }
+
+    else
+        { semiMajor = ry
+        , semiMinor = rx
+        , theta =
+            r.xOrient
+                |> getOrientationPi
+                |> (\xx -> xx + pi / 2)
+                |> orientationPi
+        }
+
+
+{-| Calculate the parameters of the implicit quartic equation of an ellipse
+centred at the origin.
+
+The inpus are:
+
+  - `semiMajor`: radius of the semi-major axis
+  - `semiMinor`: radius of the semi-minor axis
+  - `theta`: angle between the parent coordinate system's x-axis and the
+    semi-major axis
+
+The inputs are:
+
+  - `a`: `x^2` coefficient
+  - `b`: `x*y` coefficient
+  - `c`: `y^2` coefficient
+
+`a`, `b` and `c` form the implicit quartic equation, which is:
+
+    a * sq x + b * x * y + c * sq y - 1 = 0
+
+All points, `(x, y)`, on the ellipse in its parent coordinates must satisfy
+this equation.
+
+-}
+ellipseImplicits :
+    { semiMajor : Float
+    , semiMinor : Float
+    , theta : OrientationPi
+    }
+    ->
+        { a : Float
+        , b : Float
+        , c : Float
+        }
+ellipseImplicits r =
+    let
+        theta =
+            r.theta |> getOrientationPi
+
+        ( c, s ) =
+            ( cos theta, sin theta )
+
+        ( c2, s2 ) =
+            ( sq c, sq s )
+
+        ( a2, b2 ) =
+            ( sq r.semiMajor, sq r.semiMinor )
+    in
+    { a = c2 / a2 + s2 / b2
+    , b = 2 * c * s * (1 / a2 - 1 / b2)
+    , c = s2 / a2 + c2 / b2
+    }
+
+
+{-| Convert the parameters of the implicit quadric equation of an ellipse
+centred at the origin to the axis form of an ellipse.
+
+See [`ellipseImplicits`](#ellipseImplicits) for a description of all the
+parameters.
+
+-}
+ellipseImplicitsToAxes :
+    { a : Float
+    , b : Float
+    , c : Float
+    }
+    ->
+        { semiMajor : Float
+        , semiMinor : Float
+        , theta : OrientationPi
+        }
+ellipseImplicitsToAxes r =
+    let
+        c1 =
+            sq r.b
+
+        c2 =
+            c1 - 4 * r.a * r.c
+
+        c3 =
+            r.a + r.c
+
+        c4 =
+            sqrt (sq (r.a - r.c) + c1)
+
+        c5 =
+            -2 * c2
+    in
+    { semiMajor = -1 * sqrt (c5 * (c3 + c4)) / c2
+    , semiMinor = -1 * sqrt (c5 * (c3 - c4)) / c2
+    , theta = atan2 -r.b (r.c - r.a) / 2 |> orientationPi
+    }
