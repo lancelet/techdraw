@@ -4,6 +4,9 @@ module Techdraw exposing
     , empty, path, svg, group, transform
     , style
     , fill, stroke, strokeWidth
+    , onClick, onContextMenu, onDblClick, onMouseDown
+    , onMouseEnter, onMouseLeave, onMouseMove
+    , onMouseOut, onMouseOver, onMouseUp
     , Style
     , styleDefault, styleInheritAll
     , styleSetFill, styleSetStroke, styleSetStrokeWidth
@@ -11,6 +14,7 @@ module Techdraw exposing
     , styleAppendDecorator, styleAppendAttribute
     , styleGetDecorators, styleGetAttributes
     , Decorator(..)
+    , MouseInfo(..)
     )
 
 {-|
@@ -51,6 +55,13 @@ TODO:
 @docs fill, stroke, strokeWidth
 
 
+## Handling events
+
+@docs onClick, onContextMenu, onDblClick, onMouseDown
+@docs onMouseEnter, onMouseLeave, onMouseMove
+@docs onMouseOut, onMouseOver, onMouseUp
+
+
 # Styles
 
 @docs Style
@@ -65,11 +76,19 @@ TODO:
 
 @docs Decorator
 
+
+# Event information
+
+@docs MouseInfo
+
 -}
 
+import Html.Events as HtmlEvents
+import Json.Decode as Decode exposing (Decoder)
 import Techdraw.Math as Math
     exposing
         ( AffineTransform(..)
+        , P2
         , Path
         , affApplyPath
         , affIdentity
@@ -96,6 +115,7 @@ type Drawing msg
     | DrawingStyled (Style msg) (Drawing msg)
     | DrawingTransformed AffineTransform (Drawing msg)
     | DrawingGroup (List (Drawing msg))
+    | DrawingEvents (Events msg) (Drawing msg)
 
 
 {-| Empty drawing.
@@ -383,6 +403,13 @@ A `Decorator` can then modify the path as it sees fit, to produce a new
 aim is to retain it, then it must be part of the `Drawing` returned by
 the `Decorator`.
 
+TODO: There should probably be a different layout for decorators. For
+example, we want to support decorator operations like this:
+
+  - Shorten a path, then add an arrow. This requires a sequencing of
+    secorators (shorten, THEN add arrow geometry). Currently, there's
+    no way to do sequencing.
+
 -}
 type Decorator msg
     = Decorator
@@ -391,6 +418,347 @@ type Decorator msg
          -> Path
          -> Drawing msg
         )
+
+
+
+---- Events -------------------------------------------------------------------
+
+
+{-| Register an `onclick` listener.
+-}
+onClick : (MouseInfo -> msg) -> Drawing msg -> Drawing msg
+onClick fn =
+    fn |> MouseHandler |> MouseClick |> registerListener
+
+
+{-| Register an `oncontextmenu` listener.
+-}
+onContextMenu : (MouseInfo -> msg) -> Drawing msg -> Drawing msg
+onContextMenu fn =
+    fn |> MouseHandler |> MouseContextMenu |> registerListener
+
+
+{-| Register an `ondblclick` listener.
+-}
+onDblClick : (MouseInfo -> msg) -> Drawing msg -> Drawing msg
+onDblClick fn =
+    fn |> MouseHandler |> MouseDblClick |> registerListener
+
+
+{-| Register an `onmousedown` listener.
+-}
+onMouseDown : (MouseInfo -> msg) -> Drawing msg -> Drawing msg
+onMouseDown fn =
+    fn |> MouseHandler |> MouseDown |> registerListener
+
+
+{-| Register an `onmouseenter` listener.
+-}
+onMouseEnter : (MouseInfo -> msg) -> Drawing msg -> Drawing msg
+onMouseEnter fn =
+    fn |> MouseHandler |> MouseEnter |> registerListener
+
+
+{-| Register an `onmouseleave` listener.
+-}
+onMouseLeave : (MouseInfo -> msg) -> Drawing msg -> Drawing msg
+onMouseLeave fn =
+    fn |> MouseHandler |> MouseLeave |> registerListener
+
+
+{-| Register an `onmousemove` listener.
+-}
+onMouseMove : (MouseInfo -> msg) -> Drawing msg -> Drawing msg
+onMouseMove fn =
+    fn |> MouseHandler |> MouseMove |> registerListener
+
+
+{-| Register an `onmouseout` listener.
+-}
+onMouseOut : (MouseInfo -> msg) -> Drawing msg -> Drawing msg
+onMouseOut fn =
+    fn |> MouseHandler |> MouseOut |> registerListener
+
+
+{-| Register an `onmouseover` listener.
+-}
+onMouseOver : (MouseInfo -> msg) -> Drawing msg -> Drawing msg
+onMouseOver fn =
+    fn |> MouseHandler |> MouseOver |> registerListener
+
+
+{-| Register an `onmouseup` listener.
+-}
+onMouseUp : (MouseInfo -> msg) -> Drawing msg -> Drawing msg
+onMouseUp fn =
+    fn |> MouseHandler |> MouseUp |> registerListener
+
+
+{-| Register an event listener.
+-}
+registerListener : EventListener msg -> Drawing msg -> Drawing msg
+registerListener listener drawing =
+    case drawing of
+        DrawingEvents events childDrawing ->
+            DrawingEvents (eventsAddListener listener events) childDrawing
+
+        _ ->
+            DrawingEvents (newEventsWithListener listener) drawing
+
+
+{-| Events.
+-}
+type Events msg
+    = Events (List (EventListener msg))
+
+
+{-| Create an empty `Events`.
+-}
+emptyEvents : Events msg
+emptyEvents =
+    Events []
+
+
+{-| Create a new `Events` containing a single listener.
+-}
+newEventsWithListener : EventListener msg -> Events msg
+newEventsWithListener listener =
+    Events [ listener ]
+
+
+{-| Add an event listener.
+-}
+eventsAddListener : EventListener msg -> Events msg -> Events msg
+eventsAddListener listener (Events es) =
+    Events <| listener :: es
+
+
+{-| Combine events listeners.
+-}
+combineEvents : Events msg -> Events msg -> Events msg
+combineEvents (Events parentList) (Events childList) =
+    Events (parentList ++ childList)
+
+
+{-| Types of event listeners and their handlers.
+-}
+type EventListener msg
+    = MouseClick (MouseHandler msg)
+    | MouseContextMenu (MouseHandler msg)
+    | MouseDblClick (MouseHandler msg)
+    | MouseDown (MouseHandler msg)
+    | MouseEnter (MouseHandler msg)
+    | MouseLeave (MouseHandler msg)
+    | MouseMove (MouseHandler msg)
+    | MouseOut (MouseHandler msg)
+    | MouseOver (MouseHandler msg)
+    | MouseUp (MouseHandler msg)
+
+
+{-| Information about a mouse event.
+-}
+type MouseInfo
+    = MouseInfo
+        { worldPt : P2
+        , button : MouseButton
+        , modifiers : ModifierKeys
+        , localToWorld : AffineTransform
+        }
+
+
+{-| Mouse button.
+-}
+type MouseButton
+    = MouseButtonMain
+    | MouseButtonAux
+    | MouseButtonSecondary
+    | MouseButtonFourth
+    | MouseButtonFifth
+    | MouseButtonUnknown Int
+
+
+{-| Modifier key state.
+-}
+type ModifierKeys
+    = ModifierKeys
+        { ctrl : Bool
+        , shift : Bool
+        , alt : Bool
+        , meta : Bool
+        }
+
+
+{-| A MouseHandler event.
+
+It receieves the local-to-world transform and world mouse coordinates.
+
+-}
+type MouseHandler msg
+    = MouseHandler (MouseInfo -> msg)
+
+
+{-| Convert listed event handlers to attributes.
+-}
+eventsToAttributes : AffineTransform -> Events msg -> List (Attribute msg)
+eventsToAttributes localToWorld (Events es) =
+    List.map (eventListenerToAttribute localToWorld) es
+
+
+eventListenerToAttribute : AffineTransform -> EventListener msg -> Attribute msg
+eventListenerToAttribute localToWorld listener =
+    let
+        mouseA name handler =
+            mouseHandlerToAttribute localToWorld name handler
+    in
+    case listener of
+        MouseClick handler ->
+            mouseA "click" handler
+
+        MouseContextMenu handler ->
+            mouseA "contextmenu" handler
+
+        MouseDblClick handler ->
+            mouseA "dblclick" handler
+
+        MouseDown handler ->
+            mouseA "mousedown" handler
+
+        MouseEnter handler ->
+            mouseA "mouseenter" handler
+
+        MouseLeave handler ->
+            mouseA "mouseleave" handler
+
+        MouseMove handler ->
+            mouseA "mousemove" handler
+
+        MouseOut handler ->
+            mouseA "mouseout" handler
+
+        MouseOver handler ->
+            mouseA "mouseover" handler
+
+        MouseUp handler ->
+            mouseA "mouseup" handler
+
+
+mouseHandlerToAttribute : AffineTransform -> String -> MouseHandler msg -> Attribute msg
+mouseHandlerToAttribute localToWorld eventName mouseHandler =
+    HtmlEvents.on eventName (mouseHandlerDecoder localToWorld mouseHandler)
+
+
+mouseHandlerDecoder : AffineTransform -> MouseHandler msg -> Decoder msg
+mouseHandlerDecoder localToWorld (MouseHandler mkMsg) =
+    Decode.map mkMsg (mouseInfo localToWorld)
+
+
+mouseInfo : AffineTransform -> Decoder MouseInfo
+mouseInfo localToWorld =
+    Decode.map3
+        (\worldPt btn mods ->
+            MouseInfo
+                { worldPt = worldPt
+                , button = btn
+                , modifiers = mods
+                , localToWorld = localToWorld
+                }
+        )
+        clientP2
+        mouseButton
+        modifiers
+
+
+clientP2 : Decoder P2
+clientP2 =
+    Decode.map2 Math.p2 clientXFloat clientYFloat
+
+
+clientXFloat : Decoder Float
+clientXFloat =
+    Decode.map toFloat clientX
+
+
+clientYFloat : Decoder Float
+clientYFloat =
+    Decode.map toFloat clientY
+
+
+mouseButton : Decoder MouseButton
+mouseButton =
+    Decode.map
+        (\i ->
+            case i of
+                0 ->
+                    MouseButtonMain
+
+                1 ->
+                    MouseButtonAux
+
+                2 ->
+                    MouseButtonSecondary
+
+                3 ->
+                    MouseButtonFourth
+
+                4 ->
+                    MouseButtonFifth
+
+                _ ->
+                    MouseButtonUnknown i
+        )
+        button
+
+
+modifiers : Decoder ModifierKeys
+modifiers =
+    Decode.map4
+        (\ctrl shift alt meta ->
+            ModifierKeys
+                { ctrl = ctrl
+                , shift = shift
+                , alt = alt
+                , meta = meta
+                }
+        )
+        ctrlKey
+        shiftKey
+        altKey
+        metaKey
+
+
+clientX : Decoder Int
+clientX =
+    Decode.field "clientX" Decode.int
+
+
+clientY : Decoder Int
+clientY =
+    Decode.field "clientY" Decode.int
+
+
+button : Decoder Int
+button =
+    Decode.field "button" Decode.int
+
+
+ctrlKey : Decoder Bool
+ctrlKey =
+    Decode.field "ctrlKey" Decode.bool
+
+
+shiftKey : Decoder Bool
+shiftKey =
+    Decode.field "shiftKey" Decode.bool
+
+
+altKey : Decoder Bool
+altKey =
+    Decode.field "altKey" Decode.bool
+
+
+metaKey : Decoder Bool
+metaKey =
+    Decode.field "metaKey" Decode.bool
 
 
 
@@ -407,6 +775,7 @@ render =
 type State msg
     = State
         { style : Style msg
+        , events : Events msg
         , localToWorld : AffineTransform
         }
 
@@ -415,6 +784,7 @@ initState : State msg
 initState =
     State
         { style = styleDefault
+        , events = emptyEvents
         , localToWorld = affIdentity
         }
 
@@ -422,6 +792,11 @@ initState =
 stateStyle : State msg -> Style msg
 stateStyle (State state) =
     state.style
+
+
+stateEvents : State msg -> Events msg
+stateEvents (State state) =
+    state.events
 
 
 stateLocalToWorld : State msg -> AffineTransform
@@ -432,6 +807,11 @@ stateLocalToWorld (State state) =
 stateCombineStyles : State msg -> Style msg -> State msg
 stateCombineStyles (State parent) child =
     State { parent | style = combineStyles parent.style child }
+
+
+stateCombineEvents : State msg -> Events msg -> State msg
+stateCombineEvents (State parent) child =
+    State { parent | events = combineEvents parent.events child }
 
 
 stateComposeTransform : State msg -> AffineTransform -> State msg
@@ -451,6 +831,10 @@ renderWithState state drawing =
         styl : Style msg
         styl =
             state |> stateStyle
+
+        events : Events msg
+        events =
+            state |> stateEvents
 
         localToWorld : AffineTransform
         localToWorld =
@@ -473,11 +857,14 @@ renderWithState state drawing =
                     styleAttributes =
                         styleToAttributes styl
 
+                    eventAttributes =
+                        eventsToAttributes localToWorld events
+
                     pathAttr =
                         affApplyPath localToWorld pth |> toSvgPPath |> SvgAttributes.d
 
                     attributes =
-                        pathAttr :: styleAttributes
+                        pathAttr :: (styleAttributes ++ eventAttributes)
                 in
                 TypedSvg.path attributes []
 
@@ -505,6 +892,9 @@ renderWithState state drawing =
 
         DrawingGroup children ->
             g [] <| List.map (renderWithState state) children
+
+        DrawingEvents evts childDrawing ->
+            renderWithState (stateCombineEvents state evts) childDrawing
 
 
 {-| Convert a style to a list of SVG attributes.
