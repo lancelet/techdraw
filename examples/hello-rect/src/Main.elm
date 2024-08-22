@@ -13,69 +13,118 @@ import Techdraw
     exposing
         ( Drawing
         , fill
+        , group
         , onMouseEnter
         , onMouseLeave
+        , onMouseMove
         , path
         , render
+        , rotateAbout
+        , skewX
         , stroke
         , strokeWidth
         , transform
+        , translate
         )
-import Techdraw.Internal.Util exposing (unsafeForceMaybe)
-import Techdraw.Math exposing (Scale(..), affScale)
-import Techdraw.PathBuilder as PathBuilder exposing (close, createPath, lineTo, moveTo)
-import TypedSvg exposing (svg)
-import TypedSvg.Attributes exposing (height, viewBox, width)
-import TypedSvg.Types exposing (Paint(..), px)
+import Techdraw.Math exposing (P2, Scale(..), affScale, p2x, p2y)
+import Techdraw.Shapes.Simple exposing (circle, ellipse, rectRounded)
+import TypedSvg.Types exposing (Paint(..))
 
 
 type Model
     = Model
         { color : Color
+        , coords : Maybe P2
         }
 
 
 type Msg
     = MouseEnter
     | MouseLeave
+    | MouseMove P2
 
 
 init : Model
 init =
-    Model { color = blue }
+    Model { color = blue, coords = Nothing }
 
 
 rectangle =
-    PathBuilder.empty
-        |> moveTo ( 2, 2 )
-        |> lineTo ( 2, 8 )
-        |> lineTo ( 8, 8 )
-        |> lineTo ( 8, 2 )
-        |> close
-        |> createPath
-        |> unsafeForceMaybe "Path should be valid."
+    let
+        r =
+            rectRounded
+                { x = 2
+                , y = 2
+                , width = 6
+                , height = 6
+                , rx = 1
+                , ry = 1
+                }
+    in
+    r
 
 
 drawing : Model -> Drawing Msg
 drawing (Model model) =
-    path rectangle
-        |> fill (Paint model.color)
-        |> stroke (Paint black)
-        |> strokeWidth 2
-        |> transform (affScale <| Scale 2 2)
-        |> transform (affScale <| Scale 5 5)
-        |> onMouseEnter (\_ -> MouseEnter)
-        |> onMouseLeave (\_ -> MouseLeave)
+    group
+        [ path
+            rectangle
+            |> fill (Paint model.color)
+            |> stroke (Paint black)
+            |> strokeWidth 2
+            |> transform (affScale <| Scale 10 10)
+            |> translate ( -50, -50 )
+            |> skewX 10
+            |> translate ( 50, 50 )
+            |> rotateAbout 10 ( 50, 50 )
+            |> onMouseEnter (\_ -> MouseEnter)
+            |> onMouseLeave (\_ -> MouseLeave)
+            |> onMouseMove (\info -> MouseMove <| info.localPtFn ())
+        , path (circle { r = 40, cx = 50, cy = 50 })
+            |> fill PaintNone
+            |> stroke (Paint green)
+            |> strokeWidth 5
+        , path (ellipse { rx = 20, ry = 40, cx = 50, cy = 50 })
+            |> fill PaintNone
+            |> stroke (Paint purple)
+            |> strokeWidth 3
+        ]
+
+
+floatToStrRounded : Float -> String
+floatToStrRounded value =
+    toFloat (round (value * 10)) / 10 |> String.fromFloat
 
 
 view : Model -> Html Msg
 view model =
-    svg
-        [ width (px 100)
-        , height (px 100)
-        , viewBox 0 0 100 100
+    let
+        (Model m) =
+            model
+
+        viewBox =
+            { minX = 0
+            , minY = 0
+            , width = 100
+            , height = 100
+            }
+
+        coordStr =
+            case m.coords of
+                Nothing ->
+                    ""
+
+                Just pt ->
+                    "("
+                        ++ floatToStrRounded (p2x pt)
+                        ++ ", "
+                        ++ floatToStrRounded (p2y pt)
+                        ++ ")"
+    in
+    div []
+        [ drawing model |> render viewBox
+        , div [] [ p [] [ text coordStr ] ]
         ]
-        [ drawing model |> render ]
 
 
 update : Msg -> Model -> Model
@@ -85,7 +134,14 @@ update msg (Model model) =
             Model { model | color = red }
 
         MouseLeave ->
-            Model { model | color = blue }
+            Model
+                { model
+                    | color = blue
+                    , coords = Nothing
+                }
+
+        MouseMove pt ->
+            Model { model | coords = Just pt }
 
 
 main =

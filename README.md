@@ -31,7 +31,12 @@ elm-doc-preview
 
 ## TODO
 
-- Consider creating an empty path type so that `createPath` always returns a `Path`.
-- Add attributes / styles when rendering.
-- Add events.
-- Add post-path rendering hook.
+- Better fuzzer for paths - don't create primitives which start and end at the
+  same point.
+
+## Ideas
+
+- Tagged coordinate systems. Maybe you want coordinates in some arbitrary system
+  defined in the document, not just path-local or world?
+- Tagged anchor points. You could specify a named anchor somewhere in the document,
+  and then fetch its coordinates to use for layout.

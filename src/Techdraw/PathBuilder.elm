@@ -22,7 +22,6 @@ module Techdraw.PathBuilder exposing
 -}
 
 import List.Nonempty as Nonempty
-import Techdraw.Internal.Util exposing (unsafeForceMaybe)
 import Techdraw.Math
     exposing
         ( ArcTo(..)
@@ -94,11 +93,13 @@ processSubPathResult result (PathBuilder pathBuilder) =
 
 {-| Turn a `PathBuilder` into a completed path.
 -}
-createPath : PathBuilder -> Maybe Path
+createPath : PathBuilder -> Path
 createPath (PathBuilder pathBuilder) =
     let
         final_backward_subpaths =
             if subPathHasCommands pathBuilder.subPathBuilder then
+                -- Here, we're emptying out any remaining commands in the
+                -- subpath builder.
                 subPathBuilderToSubPath pathBuilder.subPathBuilder :: pathBuilder.subPaths
 
             else
@@ -106,6 +107,7 @@ createPath (PathBuilder pathBuilder) =
     in
     Nonempty.fromList (List.reverse final_backward_subpaths)
         |> Maybe.map Path
+        |> Maybe.withDefault EmptyPath
 
 
 {-| Execute a subpath program.
@@ -213,13 +215,23 @@ subPathHasCommands (SubPathBuilder builder) =
 -}
 subPathBuilderToSubPath : SubPathBuilder -> SubPath
 subPathBuilderToSubPath (SubPathBuilder builder) =
-    SubPath
-        builder.closure
-        (MoveTo <| Maybe.withDefault (p2 0 0) builder.start)
-        (Nonempty.fromList builder.commands
-            |> unsafeForceMaybe
-                "Should only building a final SubPath when commands are present."
-        )
+    let
+        -- This exists to unpack a Maybe value that we know is always a Just
+        dummy_subpath =
+            SubPath SubPathOpen (MoveTo <| p2 0 0) <|
+                Nonempty.singleton <|
+                    CmdLineTo <|
+                        LineTo <|
+                            p2 100 100
+
+        spMoveTo =
+            MoveTo <| Maybe.withDefault (p2 0 0) builder.start
+    in
+    builder.commands
+        |> List.reverse
+        |> Nonempty.fromList
+        |> Maybe.map (SubPath builder.closure spMoveTo)
+        |> Maybe.withDefault dummy_subpath
 
 
 type SubPathResult
