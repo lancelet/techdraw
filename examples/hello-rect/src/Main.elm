@@ -9,7 +9,18 @@ All this is to draw a rectangle.
 import Browser
 import Color exposing (..)
 import Html exposing (..)
-import Techdraw exposing (Drawing, fill, path, render, stroke, strokeWidth, transform)
+import Techdraw
+    exposing
+        ( Drawing
+        , fill
+        , onMouseEnter
+        , onMouseLeave
+        , path
+        , render
+        , stroke
+        , strokeWidth
+        , transform
+        )
 import Techdraw.Internal.Util exposing (unsafeForceMaybe)
 import Techdraw.Math exposing (Scale(..), affScale)
 import Techdraw.PathBuilder as PathBuilder exposing (close, createPath, lineTo, moveTo)
@@ -26,12 +37,12 @@ type Model
 
 type Msg
     = MouseEnter
-    | MouseExit
+    | MouseLeave
 
 
 init : Model
 init =
-    Model { color = red }
+    Model { color = blue }
 
 
 rectangle =
@@ -45,7 +56,7 @@ rectangle =
         |> unsafeForceMaybe "Path should be valid."
 
 
-drawing : Model -> Drawing msg
+drawing : Model -> Drawing Msg
 drawing (Model model) =
     path rectangle
         |> fill (Paint model.color)
@@ -53,6 +64,8 @@ drawing (Model model) =
         |> strokeWidth 2
         |> transform (affScale <| Scale 2 2)
         |> transform (affScale <| Scale 5 5)
+        |> onMouseEnter (\_ -> MouseEnter)
+        |> onMouseLeave (\_ -> MouseLeave)
 
 
 view : Model -> Html Msg
@@ -71,7 +84,7 @@ update msg (Model model) =
         MouseEnter ->
             Model { model | color = red }
 
-        MouseExit ->
+        MouseLeave ->
             Model { model | color = blue }
 
 
