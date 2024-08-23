@@ -11,7 +11,6 @@ import Techdraw.Anticipate
         , fuzz2
         , fuzz3
         , greaterThan
-        , isFail
         , lessThan
         , pass
         , within
@@ -28,8 +27,7 @@ suite =
         [ angleTests
         , matVecTests
         , affineTransformTests
-
-        -- , pathTests
+        , pathTests
         , ellipseOpTests
         ]
 
@@ -477,53 +475,60 @@ atComponentsTest =
 
 
 ---- Path tests ---------------------------------------------------------------
--- TODO: Need a better fuzzer for paths. When arcs are degenerate (ie
--- they finish at the same point they started), then the transformation to
--- curves and back fails.
-{-
-   pathTests : Test
-   pathTests =
-       describe "Paths"
-           [ subPathCurvesRoundTripTest
-           ]
 
 
-   subPathCurvesRoundTripTest : Test
-   subPathCurvesRoundTripTest =
-       fuzz
-           MathFuzzer.subPathNormalized
-           "Round-trip a normalized subpath to joined curves and back"
-       <|
-           \subpath ->
-               let
-                   joinedCurves =
-                       Math.subPathToJoinedCurves subpath
+pathTests : Test
+pathTests =
+    describe "Paths"
+        [ subPathCurvesRoundTripTest
+        , pathTransformRoundTripTest
+        ]
 
-                   finalSubPath =
-                       Math.joinedCurvesToSubPath
-                           (Math.subPathClosure subpath)
-                           joinedCurves
 
-                   anticipation =
-                       MathCompare.subPath subpath finalSubPath
+subPathCurvesRoundTripTest : Test
+subPathCurvesRoundTripTest =
+    fuzz
+        (MathFuzzer.subPathNormalized (MathFuzzer.MinEcc 0.05))
+        "Round-trip a normalized subpath to joined curves and back"
+    <|
+        \subpath ->
+            let
+                joinedCurves =
+                    Math.subPathToJoinedCurves subpath
 
-                   _ =
-                       if isFail anticipation then
-                           let
-                               _ =
-                                   Debug.log "spt"
-                                       { subpath = subpath
-                                       , finalSubPath = finalSubPath
-                                       }
-                           in
-                           ()
+                finalSubPath =
+                    Math.joinedCurvesToSubPath
+                        (Math.subPathClosure subpath)
+                        joinedCurves
 
-                       else
-                           ()
-               in
-               anticipation
+                anticipation =
+                    MathCompare.subPath subpath finalSubPath
+            in
+            anticipation
 
--}
+
+pathTransformRoundTripTest : Test
+pathTransformRoundTripTest =
+    fuzz2
+        (MathFuzzer.pathNormalized (MathFuzzer.MinEcc 0.3))
+        MathFuzzer.affineTransform
+        "Round-trip a normalized subpath through a transformation and back"
+    <|
+        \initPath transform ->
+            let
+                tol =
+                    AbsoluteOrRelative 1.0e-2 1.0e-2
+
+                xfPath =
+                    Math.affApplyPath transform initPath
+
+                finalPath =
+                    Math.affApplyPath (Math.affInvert transform) xfPath
+            in
+            MathCompare.path_tol tol initPath finalPath
+
+
+
 ---- Ellipse Operations Tests -------------------------------------------------
 
 

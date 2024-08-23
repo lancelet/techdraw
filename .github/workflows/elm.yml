@@ -31,7 +31,7 @@ jobs:
         run: |
           echo "Running Elm Tests"
           elm make
-          elm-test
+          elm-test --fuzz 10000 --seed 42
           elm-verify-examples --run-tests
 
       - name: Compile Examples

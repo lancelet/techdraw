@@ -19,8 +19,10 @@ module Techdraw.Math.Compare exposing
     , orientationPi_tol
     , p2
     , p2_tol
+    , path
     , pathCommand
     , pathCommand_tol
+    , path_tol
     , qBezierTo
     , qBezierTo_tol
     , subPath
@@ -46,6 +48,7 @@ import Techdraw.Math as Math
         , MoveTo(..)
         , OrientationPi
         , P2(..)
+        , Path(..)
         , PathCommand(..)
         , QBezierTo(..)
         , SubPath(..)
@@ -290,3 +293,21 @@ subPath_tol tol (SubPath l1 m1 c1) (SubPath l2 m2 c2) =
         , moveTo_tol tol m1 m2
         , Anticipate.overNonempty (pathCommand_tol tol) c1 c2
         ]
+
+
+path : Path -> Path -> Anticipate
+path =
+    path_tol defaultTol
+
+
+path_tol : FloatingPointTolerance -> Path -> Path -> Anticipate
+path_tol tol pathL pathR =
+    case ( pathL, pathR ) of
+        ( EmptyPath, EmptyPath ) ->
+            Anticipate.pass
+
+        ( Path subPathsL, Path subPathsR ) ->
+            Anticipate.overNonempty (subPath_tol tol) subPathsL subPathsR
+
+        ( _, _ ) ->
+            Anticipate.fail "Path types were different."

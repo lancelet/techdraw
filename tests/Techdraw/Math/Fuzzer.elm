@@ -1,5 +1,6 @@
 module Techdraw.Math.Fuzzer exposing
-    ( affineTransform
+    ( MinEcc(..)
+    , affineTransform
     , affineTransformComponent
     , angle2Pi
     , anglePi
@@ -7,6 +8,7 @@ module Techdraw.Math.Fuzzer exposing
     , orientationPi
     , p2
     , path
+    , pathNormalized
     , rotation
     , scale
     , shearx
@@ -49,24 +51,6 @@ import Techdraw.Util exposing (unsafeForceMaybe)
 
 
 
----- Fuzzers for Nonempty -----------------------------------------------------
-
-
-nonEmptyOfLengthBetween : Int -> Int -> Fuzzer a -> Fuzzer (Nonempty a)
-nonEmptyOfLengthBetween min_val max_val fuzzer =
-    let
-        real_min =
-            max 1 min_val
-
-        real_max =
-            max 1 max_val
-    in
-    Fuzz.listOfLengthBetween real_min real_max fuzzer
-        |> Fuzz.map Nonempty.fromList
-        |> Fuzz.map (unsafeForceMaybe "Generated more than one element")
-
-
-
 ---- Fuzzers for angles -------------------------------------------------------
 
 
@@ -91,10 +75,12 @@ orientationPi =
 
 v2 : Fuzzer V2
 v2 =
-    Fuzz.map2
-        (\e1 e2 -> Math.v2 e1 e2)
-        (floatRange -2000 2000)
-        (floatRange -2000 200)
+    v2InRange ( -200, 200 ) ( -200, 200 )
+
+
+v2InRange : ( Float, Float ) -> ( Float, Float ) -> Fuzzer V2
+v2InRange ( minE1, maxE1 ) ( minE2, maxE2 ) =
+    Fuzz.map2 Math.v2 (floatRange minE1 maxE1) (floatRange minE2 maxE2)
 
 
 m22_affine : Fuzzer M22
@@ -108,7 +94,12 @@ m22_affine =
 
 p2 : Fuzzer P2
 p2 =
-    Fuzz.map Math.v2p v2
+    p2InRange ( -200, 200 ) ( -200, 200 )
+
+
+p2InRange : ( Float, Float ) -> ( Float, Float ) -> Fuzzer P2
+p2InRange xRange yRange =
+    Fuzz.map Math.v2p <| v2InRange xRange yRange
 
 
 
@@ -119,8 +110,8 @@ translation : Fuzzer Translation
 translation =
     Fuzz.map2
         (\tx ty -> Math.Translation tx ty)
-        (floatRange -2000 2000)
-        (floatRange -2000 2000)
+        (floatRange -4 4)
+        (floatRange -4 4)
 
 
 rotation : Fuzzer Rotation
@@ -131,14 +122,14 @@ rotation =
 scale : Fuzzer Scale
 scale =
     Fuzz.map2 (\sx sy -> Math.Scale sx sy)
-        (Fuzz.oneOf [ floatRange -10 -0.05, floatRange 0.05 10 ])
-        (Fuzz.oneOf [ floatRange -10 -0.05, floatRange 0.05 10 ])
+        (Fuzz.oneOf [ floatRange -5 -0.2, floatRange 0.2 5 ])
+        (Fuzz.oneOf [ floatRange -5 -0.2, floatRange 0.2 5 ])
 
 
 shearx : Fuzzer ShearX
 shearx =
     Fuzz.map (\hx -> Math.ShearX hx)
-        (Fuzz.oneOf [ floatRange -10 -0.05, floatRange 0.05 10 ])
+        (Fuzz.oneOf [ floatRange -3 -0.5, floatRange 0.5 3 ])
 
 
 affineTransformComponent : Fuzzer AffineTransformComponent
@@ -165,14 +156,57 @@ affineTransform =
 ---- Fuzzers for Paths --------------------------------------------------------
 
 
-path : Fuzzer Path
-path =
-    Fuzz.map Path (nonEmptyOfLengthBetween 1 3 subPath)
+{-| Minimum eccentricity.
+
+This parameter is used to set a lower bound on the eccentricity of generated
+`ArcTo` commands.
+
+To allow circles, set `MinEcc` to a value of zero or lower. 1 indicates
+maximum eccentricity.
+
+For many tests, dissimilar radii are preferable. This is because if the radii
+are the same, we end up with a circle. In the case of a circle, the principal
+axis directions are undefined or degenerate. Consequently, any sophisticated
+test that relies on comparing principal axis directions may need them to be
+well-defined.
+
+-}
+type MinEcc
+    = MinEcc Float
 
 
-subPath : Fuzzer SubPath
-subPath =
-    Fuzz.map3 SubPath subPathClosure moveTo (nonEmptyOfLengthBetween 1 32 pathCommand)
+path : MinEcc -> Fuzzer Path
+path minEcc =
+    Fuzz.frequency
+        [ ( 1, Fuzz.constant EmptyPath )
+        , ( 50, nonEmptyPath minEcc )
+        ]
+
+
+nonEmptyPath : MinEcc -> Fuzzer Path
+nonEmptyPath minEcc =
+    Fuzz.listOfLengthBetween 1 3 (subPath minEcc)
+        |> Fuzz.map Nonempty.fromList
+        |> Fuzz.map (unsafeForceMaybe "Generated at least 1 subpath")
+        |> Fuzz.map Path
+
+
+pathNormalized : MinEcc -> Fuzzer Path
+pathNormalized minEcc =
+    path minEcc |> Fuzz.map Math.normalizePath
+
+
+subPathNormalized : MinEcc -> Fuzzer SubPath
+subPathNormalized minEcc =
+    subPath minEcc |> Fuzz.map Math.normalizeSubPath
+
+
+subPath : MinEcc -> Fuzzer SubPath
+subPath minEcc =
+    Fuzz.map2
+        (\( moveTo, commands ) closure -> SubPath closure moveTo commands)
+        (moveToAndPathCommands minEcc)
+        subPathClosure
 
 
 subPathClosure : Fuzzer SubPathClosure
@@ -188,47 +222,118 @@ subPathClosure =
         Fuzz.bool
 
 
-{-| Fuzzer for sub-paths with normalized arcs.
+moveToAndPathCommands : MinEcc -> Fuzzer ( MoveTo, Nonempty PathCommand )
+moveToAndPathCommands minEcc =
+    p2
+        |> Fuzz.andThen
+            (\startPt ->
+                pathCommandsOfLengthBetween ( 1, 10 ) minEcc startPt
+                    |> Fuzz.map
+                        (\pathCommandList ->
+                            ( MoveTo startPt
+                            , Nonempty.fromList pathCommandList
+                                |> unsafeForceMaybe
+                                    "Generated at least 1 path command"
+                            )
+                        )
+            )
+
+
+{-| Generate a list of path commands with a length in a given range and
+given a starting point.
+
+The minEccentricity is to control the minimum eccentricity of arc commands.
+
 -}
-subPathNormalized : Fuzzer SubPath
-subPathNormalized =
-    Fuzz.map Math.normalizeSubPath subPath
+pathCommandsOfLengthBetween :
+    ( Int, Int )
+    -> MinEcc
+    -> P2
+    -> Fuzzer (List PathCommand)
+pathCommandsOfLengthBetween ( minLen, maxLen ) minEcc startPt =
+    Fuzz.intRange minLen maxLen
+        |> Fuzz.andThen
+            (\nCommands -> pathCommands nCommands minEcc startPt)
 
 
-pathCommand : Fuzzer PathCommand
-pathCommand =
+{-| Generate a list of path commands given a starting point.
+
+The minEccentricity is to control the minimum eccentricity of arc commands.
+
+-}
+pathCommands : Int -> MinEcc -> P2 -> Fuzzer (List PathCommand)
+pathCommands count minEcc startPt =
+    let
+        addCommand : Int -> P2 -> List PathCommand -> Fuzzer (List PathCommand)
+        addCommand cmdCount lastPt cmds =
+            if cmdCount == count then
+                Fuzz.constant cmds
+
+            else
+                pathCommand minEcc lastPt
+                    |> Fuzz.andThen
+                        (\newCmd ->
+                            addCommand
+                                (cmdCount + 1)
+                                (Math.pathCommandEnd newCmd)
+                                (newCmd :: cmds)
+                        )
+    in
+    addCommand 0 startPt [] |> Fuzz.map List.reverse
+
+
+{-| Generate a path command given the last point on the path.
+
+The minEccentricity is to control the minimum eccentricity of arc commands.
+
+-}
+pathCommand : MinEcc -> P2 -> Fuzzer PathCommand
+pathCommand minEcc lastPt =
     Fuzz.oneOf
-        [ Fuzz.map CmdLineTo lineTo
-        , Fuzz.map CmdQBezierTo qBezierTo
-        , Fuzz.map CmdCBezierTo cBezierTo
-        , Fuzz.map CmdArcTo arcTo
+        [ lineTo lastPt |> Fuzz.map CmdLineTo
+        , qBezierTo lastPt |> Fuzz.map CmdQBezierTo
+        , cBezierTo lastPt |> Fuzz.map CmdCBezierTo
+        , arcTo minEcc lastPt |> Fuzz.map CmdArcTo
         ]
 
 
-moveTo : Fuzzer MoveTo
-moveTo =
-    Fuzz.map Math.MoveTo p2
+{-| Create a next point for a path.
+-}
+nextPathPoint : P2 -> Fuzzer P2
+nextPathPoint lastPt =
+    pointMinDistanceFrom ( -200, 200 ) 1 lastPt
 
 
-lineTo : Fuzzer LineTo
-lineTo =
-    Fuzz.map Math.LineTo p2
+lineTo : P2 -> Fuzzer LineTo
+lineTo lastPt =
+    nextPathPoint lastPt |> Fuzz.map LineTo
 
 
-qBezierTo : Fuzzer QBezierTo
-qBezierTo =
-    Fuzz.map2 Math.QBezierTo p2 p2
+qBezierTo : P2 -> Fuzzer QBezierTo
+qBezierTo lastPt =
+    nextPathPoint lastPt
+        |> Fuzz.andThen
+            (\a -> nextPathPoint a |> Fuzz.map (\b -> QBezierTo a b))
 
 
-cBezierTo : Fuzzer CBezierTo
-cBezierTo =
-    Fuzz.map3 Math.CBezierTo p2 p2 p2
+cBezierTo : P2 -> Fuzzer CBezierTo
+cBezierTo lastPt =
+    nextPathPoint lastPt
+        |> Fuzz.andThen
+            (\a ->
+                nextPathPoint a
+                    |> Fuzz.andThen
+                        (\b ->
+                            nextPathPoint b
+                                |> Fuzz.map (\c -> CBezierTo a b c)
+                        )
+            )
 
 
-arcTo : Fuzzer ArcTo
-arcTo =
-    Fuzz.map6
-        (\end rx ry xOrient large sweep ->
+arcTo : MinEcc -> P2 -> Fuzzer ArcTo
+arcTo minEcc lastPt =
+    Fuzz.map5
+        (\end ( rx, ry ) xOrient large sweep ->
             ArcTo
                 { end = end
                 , rx = rx
@@ -238,9 +343,55 @@ arcTo =
                 , sweep = sweep
                 }
         )
-        p2
-        (floatRange -2000 2000)
-        (floatRange -2000 2000)
+        (nextPathPoint lastPt)
+        (arcDissimilarRadii ( 50, 200 ) minEcc)
         orientationPi
         Fuzz.bool
         Fuzz.bool
+
+
+{-| Generate (potentially) dissimilar radii for an elliptical arc.
+-}
+arcDissimilarRadii : ( Float, Float ) -> MinEcc -> Fuzzer ( Float, Float )
+arcDissimilarRadii ( minRadius, maxRadius ) (MinEcc minEcc) =
+    let
+        eccentricity rx ry =
+            let
+                ( a, b ) =
+                    ( max rx ry, min rx ry )
+            in
+            sqrt (1 - Math.sq b / Math.sq a)
+    in
+    floatRange minRadius maxRadius
+        |> Fuzz.andThen
+            (\rx ->
+                floatRange minRadius maxRadius
+                    |> Fuzz.andThen
+                        (\ry ->
+                            if eccentricity rx ry >= minEcc then
+                                Fuzz.constant ( rx, ry )
+
+                            else
+                                arcDissimilarRadii
+                                    ( minRadius, maxRadius )
+                                    (MinEcc minEcc)
+                        )
+            )
+
+
+{-| Create a point that is a minimum distance from another point.
+-}
+pointMinDistanceFrom : ( Float, Float ) -> Float -> P2 -> Fuzzer P2
+pointMinDistanceFrom xyRange minDistance referencePt =
+    p2InRange xyRange xyRange
+        |> Fuzz.andThen
+            (\candidateP2 ->
+                -- If the candidate point is far enough from the reference
+                -- point then keep it. Otherwise, try the whole process
+                -- again.
+                if Math.p2Distance referencePt candidateP2 >= minDistance then
+                    Fuzz.constant candidateP2
+
+                else
+                    pointMinDistanceFrom xyRange minDistance referencePt
+            )

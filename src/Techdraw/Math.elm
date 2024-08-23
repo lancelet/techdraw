@@ -29,7 +29,8 @@ module Techdraw.Math exposing
     , PathCommand(..)
     , SubPath(..), SubPathClosure(..), Path(..)
     , affApplyPath, affApplySubPath
-    , normalizeSubPath, subPathClosure
+    , normalizePath, normalizeSubPath
+    , subPathClosure
     , pathCommandEnd
     , subPathToJoinedCurves, joinedCurvesToSubPath
     , toSvgPPath
@@ -155,7 +156,8 @@ provided for this are the following:
 ## Functions
 
 @docs affApplyPath, affApplySubPath
-@docs normalizeSubPath, subPathClosure
+@docs normalizePath, normalizeSubPath
+@docs subPathClosure
 @docs pathCommandEnd
 @docs subPathToJoinedCurves, joinedCurvesToSubPath
 @docs toSvgPPath
@@ -1412,7 +1414,24 @@ normalize it. This only affects the parameterization of
 -}
 normalizeSubPath : SubPath -> SubPath
 normalizeSubPath subpath =
-    subPathToJoinedCurves subpath |> joinedCurvesToSubPath (subPathClosure subpath)
+    subPathToJoinedCurves subpath
+        |> joinedCurvesToSubPath (subPathClosure subpath)
+
+
+{-| Normalize a `Path`.
+
+This normalizes all sub-paths of a path. This only affects the
+parameterization of [`ArcTo`](#ArcTo) commands.
+
+-}
+normalizePath : Path -> Path
+normalizePath path =
+    case path of
+        EmptyPath ->
+            EmptyPath
+
+        Path cmds ->
+            Path <| Nonempty.map normalizeSubPath cmds
 
 
 {-| Convert a point to SVG path format.
