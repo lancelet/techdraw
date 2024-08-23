@@ -11,7 +11,8 @@ import Color exposing (..)
 import Html exposing (..)
 import Techdraw
     exposing
-        ( Drawing
+        ( CSysName(..)
+        , Drawing
         , fill
         , group
         , onMouseEnter
@@ -23,6 +24,7 @@ import Techdraw
         , skewX
         , stroke
         , strokeWidth
+        , tagCSys
         , transform
         , translate
         )
@@ -73,13 +75,17 @@ drawing (Model model) =
             |> stroke (Paint black)
             |> strokeWidth 2
             |> transform (affScale <| Scale 10 10)
+            |> tagCSys (CSysName "eventCSys")
             |> translate ( -50, -50 )
             |> skewX 10
             |> translate ( 50, 50 )
             |> rotateAbout 10 ( 50, 50 )
             |> onMouseEnter (\_ -> MouseEnter)
             |> onMouseLeave (\_ -> MouseLeave)
-            |> onMouseMove (\info -> MouseMove <| info.localPtFn ())
+            |> onMouseMove
+                (\info ->
+                    MouseMove <| info.pointIn (CSysName "eventCSys")
+                )
         , path (circle { r = 40, cx = 50, cy = 50 })
             |> fill PaintNone
             |> stroke (Paint green)
