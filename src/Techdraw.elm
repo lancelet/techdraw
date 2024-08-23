@@ -2,7 +2,7 @@ module Techdraw exposing
     ( Drawing
     , ViewBox
     , render, renderSvgElement
-    , empty, path, svg, group, transform
+    , empty, path, svg, group, tagCSys, transform
     , translate, rotateAbout, skewX
     , style
     , fill, stroke, strokeWidth
@@ -16,7 +16,9 @@ module Techdraw exposing
     , styleAppendDecorator, styleAppendAttribute
     , styleGetDecorators, styleGetAttributes
     , Decorator(..)
-    , MouseInfo, ModifierKeys, MouseButton
+    , MouseInfo, ModifierKeys, MouseButtons
+    , MouseButtonState(..), KeyPressState(..)
+    , CSysName(..)
     )
 
 {-|
@@ -41,7 +43,7 @@ module Techdraw exposing
 
 ### First-class Operations
 
-@docs empty, path, svg, group, transform
+@docs empty, path, svg, group, tagCSys, transform
 
 
 ### Derived Operations
@@ -49,13 +51,13 @@ module Techdraw exposing
 @docs translate, rotateAbout, skewX
 
 
-## Styling drawings
+## Styling Drawings
 
 @docs style
 @docs fill, stroke, strokeWidth
 
 
-## Handling events
+## Handling Events
 
 @docs onClick, onContextMenu, onDblClick, onMouseDown
 @docs onMouseEnter, onMouseLeave, onMouseMove
@@ -77,26 +79,24 @@ module Techdraw exposing
 @docs Decorator
 
 
-# Event information
+# Event Information
 
-@docs MouseInfo, ModifierKeys, MouseButton
+@docs MouseInfo, ModifierKeys, MouseButtons
+@docs MouseButtonState, KeyPressState
+
+
+# Coordinate Systems
+
+@docs CSysName
 
 -}
 
+import Bitwise
+import Dict exposing (Dict)
 import Html exposing (Html)
 import Html.Events as HtmlEvents
-import Json.Decode as Decode exposing (Decoder)
-import Techdraw.Math as Math
-    exposing
-        ( AffineTransform(..)
-        , P2
-        , Path
-        , affApplyP2
-        , affApplyPath
-        , affInvert
-        , affMul
-        , toSvgPPath
-        )
+import Json.Decode as Decode exposing (Decoder, bool)
+import Techdraw.Math as Math exposing (AffineTransform(..), P2, Path)
 import TypedSvg
 import TypedSvg.Attributes as SvgAttributes
 import TypedSvg.Core exposing (Svg)
@@ -118,6 +118,7 @@ type Drawing msg
     | DrawingTransformed AffineTransform (Drawing msg)
     | DrawingGroup (List (Drawing msg))
     | DrawingEvents (Events msg) (Drawing msg)
+    | DrawingTagCSys CSysName (Drawing msg)
 
 
 {-| Empty drawing.
@@ -151,7 +152,9 @@ transform : AffineTransform -> Drawing msg -> Drawing msg
 transform parentTransform drawing =
     case drawing of
         DrawingTransformed childTransform childDrawing ->
-            DrawingTransformed (Math.affMul parentTransform childTransform) childDrawing
+            DrawingTransformed
+                (Math.affMul parentTransform childTransform)
+                childDrawing
 
         _ ->
             DrawingTransformed parentTransform drawing
@@ -176,7 +179,9 @@ rotateAbout angle ( xc, yc ) =
         xform =
             Math.affFromComponents
                 [ Math.ComponentTranslation <| Math.Translation -xc -yc
-                , Math.ComponentRotation <| Math.Rotation <| Math.angle2Pi <| angle * pi / 180
+                , Math.ComponentRotation <|
+                    Math.Rotation <|
+                        Math.angle2Pi (angle * pi / 180)
                 , Math.ComponentTranslation <| Math.Translation xc yc
                 ]
     in
@@ -199,6 +204,18 @@ skewX angle =
 group : List (Drawing msg) -> Drawing msg
 group =
     DrawingGroup
+
+
+{-| Tag a coordinate system.
+
+This tags the coordinate system of a particular drawing with the name supplied.
+All coordinate systems that are part of a drawing are made available to
+mouse events that are later registered for that drawing.
+
+-}
+tagCSys : CSysName -> Drawing msg -> Drawing msg
+tagCSys name =
+    DrawingTagCSys name
 
 
 {-| Set the style of a drawing.
@@ -595,34 +612,57 @@ type EventListener msg
 
 
 {-| Information about a mouse event.
+
+The fields of this record are as follows:
+
+  - `clientPoint`: The `(clientX, clientY)` position of the mouse event.
+  - `localPoint`: The point in the local coordinate system.
+  - `buttons`: Which buttons were pressed.
+  - `modifiers`: What modifier keys were pressed.
+  - `pointIn`: A function to fetch the point in a named coordinate system.
+
 -}
 type alias MouseInfo =
-    { worldPt : P2
-    , button : MouseButton
+    { clientPoint : P2
+    , localPoint : P2
+    , buttons : MouseButtons
     , modifiers : ModifierKeys
-    , localToWorld : AffineTransform
-    , localPtFn : () -> P2
+    , pointIn : CSysName -> P2
     }
 
 
-{-| Mouse button.
+{-| Indicates whether a mouse button was pressed or not pressed.
 -}
-type MouseButton
-    = MouseButtonMain
-    | MouseButtonAux
-    | MouseButtonSecondary
-    | MouseButtonFourth
-    | MouseButtonFifth
-    | MouseButtonUnknown Int
+type MouseButtonState
+    = MouseButtonPressed
+    | MouseButtonNotPressed
+
+
+{-| Mouse buttons.
+-}
+type alias MouseButtons =
+    { button1 : MouseButtonState
+    , button2 : MouseButtonState
+    , button3 : MouseButtonState
+    , button4 : MouseButtonState
+    , button5 : MouseButtonState
+    }
+
+
+{-| Indicates whether a key was pressed or not pressed.
+-}
+type KeyPressState
+    = KeyPressed
+    | KeyNotPressed
 
 
 {-| Modifier key state.
 -}
 type alias ModifierKeys =
-    { ctrl : Bool
-    , shift : Bool
-    , alt : Bool
-    , meta : Bool
+    { ctrl : KeyPressState
+    , shift : KeyPressState
+    , alt : KeyPressState
+    , meta : KeyPressState
     }
 
 
@@ -637,16 +677,24 @@ type MouseHandler msg
 
 {-| Convert listed event handlers to attributes.
 -}
-eventsToAttributes : AffineTransform -> Events msg -> List (Attribute msg)
-eventsToAttributes localToWorld (Events es) =
-    List.map (eventListenerToAttribute localToWorld) es
+eventsToAttributes :
+    AffineTransform
+    -> CSysDict
+    -> Events msg
+    -> List (Attribute msg)
+eventsToAttributes localToWorld cSysDict (Events es) =
+    List.map (eventListenerToAttribute localToWorld cSysDict) es
 
 
-eventListenerToAttribute : AffineTransform -> EventListener msg -> Attribute msg
-eventListenerToAttribute localToWorld listener =
+eventListenerToAttribute :
+    AffineTransform
+    -> CSysDict
+    -> EventListener msg
+    -> Attribute msg
+eventListenerToAttribute localToWorld cSysDict listener =
     let
         mouseA name handler =
-            mouseHandlerToAttribute localToWorld name handler
+            mouseHandlerToAttribute localToWorld cSysDict name handler
     in
     case listener of
         MouseClick handler ->
@@ -680,29 +728,53 @@ eventListenerToAttribute localToWorld listener =
             mouseA "mouseup" handler
 
 
-mouseHandlerToAttribute : AffineTransform -> String -> MouseHandler msg -> Attribute msg
-mouseHandlerToAttribute localToWorld eventName mouseHandler =
-    HtmlEvents.on eventName (mouseHandlerDecoder localToWorld mouseHandler)
+mouseHandlerToAttribute :
+    AffineTransform
+    -> CSysDict
+    -> String
+    -> MouseHandler msg
+    -> Attribute msg
+mouseHandlerToAttribute localToWorld cSysDict eventName mouseHandler =
+    HtmlEvents.on
+        eventName
+        (mouseHandlerDecoder localToWorld cSysDict mouseHandler)
 
 
-mouseHandlerDecoder : AffineTransform -> MouseHandler msg -> Decoder msg
-mouseHandlerDecoder localToWorld (MouseHandler mkMsg) =
-    Decode.map mkMsg (mouseInfo localToWorld)
+mouseHandlerDecoder :
+    AffineTransform
+    -> CSysDict
+    -> MouseHandler msg
+    -> Decoder msg
+mouseHandlerDecoder localToWorld cSysDict (MouseHandler mkMsg) =
+    Decode.map mkMsg (mouseInfo localToWorld cSysDict)
 
 
-mouseInfo : AffineTransform -> Decoder MouseInfo
-mouseInfo localToWorld =
+mouseInfo : AffineTransform -> CSysDict -> Decoder MouseInfo
+mouseInfo localToWorld cSysDict =
+    let
+        calcLocalPoint : P2 -> P2
+        calcLocalPoint clientPoint =
+            Math.affInvert localToWorld
+                |> (\mat -> Math.affApplyP2 mat clientPoint)
+
+        calcPointIn : CSysName -> P2 -> P2
+        calcPointIn name clientPoint =
+            getCSys name cSysDict
+                |> Maybe.withDefault localToWorld
+                |> Math.affInvert
+                |> (\mat -> Math.affApplyP2 mat clientPoint)
+    in
     Decode.map3
-        (\worldPt btn mods ->
-            { worldPt = worldPt
-            , button = btn
+        (\clientPoint btns mods ->
+            { clientPoint = clientPoint
+            , localPoint = calcLocalPoint clientPoint
+            , buttons = btns
             , modifiers = mods
-            , localToWorld = localToWorld
-            , localPtFn = \() -> affApplyP2 (affInvert localToWorld) worldPt
+            , pointIn = \name -> calcPointIn name clientPoint
             }
         )
         clientP2
-        mouseButton
+        mouseButtons
         modifiers
 
 
@@ -721,40 +793,51 @@ clientYFloat =
     Decode.map toFloat clientY
 
 
-mouseButton : Decoder MouseButton
-mouseButton =
+mouseButtons : Decoder MouseButtons
+mouseButtons =
+    let
+        buttonState : Int -> Int -> MouseButtonState
+        buttonState buttonNumber input =
+            if
+                Bitwise.and
+                    input
+                    (Bitwise.shiftLeftBy buttonNumber 0x01)
+                    == 0
+            then
+                MouseButtonNotPressed
+
+            else
+                MouseButtonPressed
+    in
     Decode.map
-        (\i ->
-            case i of
-                0 ->
-                    MouseButtonMain
-
-                1 ->
-                    MouseButtonAux
-
-                2 ->
-                    MouseButtonSecondary
-
-                3 ->
-                    MouseButtonFourth
-
-                4 ->
-                    MouseButtonFifth
-
-                _ ->
-                    MouseButtonUnknown i
+        (\b ->
+            { button1 = buttonState 1 b
+            , button2 = buttonState 2 b
+            , button3 = buttonState 3 b
+            , button4 = buttonState 4 b
+            , button5 = buttonState 5 b
+            }
         )
-        button
+        buttons
 
 
 modifiers : Decoder ModifierKeys
 modifiers =
+    let
+        boolToKeyPressState : Bool -> KeyPressState
+        boolToKeyPressState boolValue =
+            if boolValue then
+                KeyPressed
+
+            else
+                KeyNotPressed
+    in
     Decode.map4
         (\ctrl shift alt meta ->
-            { ctrl = ctrl
-            , shift = shift
-            , alt = alt
-            , meta = meta
+            { ctrl = ctrl |> boolToKeyPressState
+            , shift = shift |> boolToKeyPressState
+            , alt = alt |> boolToKeyPressState
+            , meta = meta |> boolToKeyPressState
             }
         )
         ctrlKey
@@ -773,9 +856,9 @@ clientY =
     Decode.field "clientY" Decode.int
 
 
-button : Decoder Int
-button =
-    Decode.field "button" Decode.int
+buttons : Decoder Int
+buttons =
+    Decode.field "buttons" Decode.int
 
 
 ctrlKey : Decoder Bool
@@ -852,6 +935,7 @@ type State msg
         , events : Events msg
         , localToWorld : AffineTransform
         , viewBox : ViewBox
+        , coordinateSystems : CSysDict
         }
 
 
@@ -861,8 +945,10 @@ initState viewBox =
         localToWorld =
             Math.affFromComponents
                 [ Math.ComponentScale <| Math.Scale 1 -1
-                , Math.ComponentTranslation <| Math.Translation 0 viewBox.height
-                , Math.ComponentTranslation <| Math.Translation viewBox.minX viewBox.minY
+                , Math.ComponentTranslation <|
+                    Math.Translation 0 viewBox.height
+                , Math.ComponentTranslation <|
+                    Math.Translation viewBox.minX viewBox.minY
                 ]
     in
     State
@@ -870,6 +956,7 @@ initState viewBox =
         , events = emptyEvents
         , localToWorld = localToWorld
         , viewBox = viewBox
+        , coordinateSystems = emptyCSysDict
         }
 
 
@@ -893,6 +980,11 @@ stateViewBox (State state) =
     state.viewBox
 
 
+stateCoordinateSystems : State msg -> CSysDict
+stateCoordinateSystems (State state) =
+    state.coordinateSystems
+
+
 stateCombineStyles : State msg -> Style msg -> State msg
 stateCombineStyles (State parent) child =
     State { parent | style = combineStyles parent.style child }
@@ -905,7 +997,19 @@ stateCombineEvents (State parent) child =
 
 stateComposeTransform : State msg -> AffineTransform -> State msg
 stateComposeTransform (State parent) child =
-    State { parent | localToWorld = affMul parent.localToWorld child }
+    State { parent | localToWorld = Math.affMul parent.localToWorld child }
+
+
+stateInsertCoordinateSystem :
+    ( CSysName, AffineTransform )
+    -> State msg
+    -> State msg
+stateInsertCoordinateSystem pair (State parent) =
+    State
+        { parent
+            | coordinateSystems =
+                insertCSys pair parent.coordinateSystems
+        }
 
 
 {-| Render a diagram as SVG.
@@ -954,13 +1058,21 @@ renderWithState state drawing =
                                 styleToAttributes styl
 
                             eventAttributes =
-                                eventsToAttributes localToWorld events
+                                eventsToAttributes
+                                    localToWorld
+                                    (stateCoordinateSystems state)
+                                    events
 
                             pathAttr =
-                                affApplyPath localToWorld pth |> toSvgPPath |> SvgAttributes.d
+                                Math.affApplyPath localToWorld pth
+                                    |> Math.toSvgPPath
+                                    |> SvgAttributes.d
 
                             attributes =
-                                pathAttr :: (styleAttributes ++ eventAttributes)
+                                pathAttr
+                                    :: (styleAttributes
+                                            ++ eventAttributes
+                                       )
                         in
                         TypedSvg.path attributes []
 
@@ -971,9 +1083,11 @@ renderWithState state drawing =
                 -- decorator has access to those directly.
                 let
                     xfpath =
-                        affApplyPath localToWorld pth
+                        Math.affApplyPath localToWorld pth
                 in
-                List.map (\(Decorator f) -> f styl localToWorld xfpath) decorators
+                List.map
+                    (\(Decorator f) -> f styl localToWorld xfpath)
+                    decorators
                     |> group
                     |> renderWithState (initState (stateViewBox state))
 
@@ -981,10 +1095,14 @@ renderWithState state drawing =
             mkSvgChild styl localToWorld
 
         DrawingStyled parentStyle childDrawing ->
-            renderWithState (stateCombineStyles state parentStyle) childDrawing
+            renderWithState
+                (stateCombineStyles state parentStyle)
+                childDrawing
 
         DrawingTransformed childToParent childDrawing ->
-            renderWithState (stateComposeTransform state childToParent) childDrawing
+            renderWithState
+                (stateComposeTransform state childToParent)
+                childDrawing
 
         DrawingGroup children ->
             TypedSvg.g [] <| List.map (renderWithState state) children
@@ -992,13 +1110,21 @@ renderWithState state drawing =
         DrawingEvents evts childDrawing ->
             renderWithState (stateCombineEvents state evts) childDrawing
 
+        DrawingTagCSys cSysName childDrawing ->
+            renderWithState
+                (stateInsertCoordinateSystem ( cSysName, localToWorld ) state)
+                childDrawing
+
 
 {-| Convert a style to a list of SVG attributes.
 -}
 styleToAttributes : Style msg -> List (Attribute msg)
 styleToAttributes styl =
     let
-        toAttr : (Style msg -> Maybe a) -> (a -> Attribute msg) -> Maybe (Attribute msg)
+        toAttr :
+            (Style msg -> Maybe a)
+            -> (a -> Attribute msg)
+            -> Maybe (Attribute msg)
         toAttr extract produce =
             extract styl |> Maybe.map produce
 
@@ -1006,7 +1132,45 @@ styleToAttributes styl =
             List.filterMap (\x -> x)
                 [ toAttr styleGetFill SvgAttributes.fill
                 , toAttr styleGetStroke SvgAttributes.stroke
-                , toAttr styleGetStrokeWidth (\x -> SvgAttributes.strokeWidth (px x))
+                , toAttr styleGetStrokeWidth
+                    (\x -> SvgAttributes.strokeWidth (px x))
                 ]
     in
     styleAttrs ++ List.reverse (styleGetAttributes styl)
+
+
+
+---- Coordinate systems -------------------------------------------------------
+
+
+{-| Name of a coordinate system.
+-}
+type CSysName
+    = CSysName String
+
+
+{-| Dictionary of coordinate systems.
+-}
+type CSysDict
+    = CSysDict (Dict String AffineTransform)
+
+
+{-| Empty coordinate system dictionary.
+-}
+emptyCSysDict : CSysDict
+emptyCSysDict =
+    CSysDict <| Dict.empty
+
+
+{-| Insert a coordinate system into a dictionary.
+-}
+insertCSys : ( CSysName, AffineTransform ) -> CSysDict -> CSysDict
+insertCSys ( CSysName name, localToWorld ) (CSysDict dict) =
+    CSysDict <| Dict.insert name localToWorld dict
+
+
+{-| Get a coordinate system from a dictionary.
+-}
+getCSys : CSysName -> CSysDict -> Maybe AffineTransform
+getCSys (CSysName name) (CSysDict dict) =
+    Dict.get name dict
