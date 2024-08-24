@@ -3,7 +3,8 @@ module Techdraw exposing
     , ViewBox
     , render, renderSvgElement
     , empty, path, svg, group, tagCSys, transform
-    , translate, rotateAbout, skewX
+    , prependAnchorNamespace, dropAnchor, weighAnchors
+    , translate, rotateAbout, scale, skewX
     , style
     , fill, stroke, strokeWidth
     , onClick, onContextMenu, onDblClick, onMouseDown
@@ -44,11 +45,12 @@ module Techdraw exposing
 ### First-class Operations
 
 @docs empty, path, svg, group, tagCSys, transform
+@docs prependAnchorNamespace, dropAnchor, weighAnchors
 
 
 ### Derived Operations
 
-@docs translate, rotateAbout, skewX
+@docs translate, rotateAbout, scale, skewX
 
 
 ## Styling Drawings
@@ -95,8 +97,8 @@ import Bitwise
 import Dict exposing (Dict)
 import Html exposing (Html)
 import Html.Events as HtmlEvents
-import Json.Decode as Decode exposing (Decoder, bool)
-import Techdraw.Math as Math exposing (AffineTransform(..), P2, Path)
+import Json.Decode as Decode exposing (Decoder)
+import Techdraw.Math as Math exposing (AffineTransform(..), P2, Path(..))
 import TypedSvg
 import TypedSvg.Attributes as SvgAttributes
 import TypedSvg.Core exposing (Svg)
@@ -118,7 +120,10 @@ type Drawing msg
     | DrawingTransformed AffineTransform (Drawing msg)
     | DrawingGroup (List (Drawing msg))
     | DrawingEvents (Events msg) (Drawing msg)
-    | DrawingTagCSys CSysName (Drawing msg)
+    | DrawingTagCSys CSysName
+    | DrawingPrependAnchorNamespace AnchorNamespace (Drawing msg)
+    | DrawingDropAnchor AnchorName P2
+    | DrawingWeighAnchors ((String -> ( Float, Float )) -> Drawing msg)
 
 
 {-| Empty drawing.
@@ -164,11 +169,14 @@ transform parentTransform drawing =
 -}
 translate : ( Float, Float ) -> Drawing msg -> Drawing msg
 translate ( tx, ty ) =
-    let
-        xform =
-            Math.affTranslate <| Math.Translation tx ty
-    in
-    transform xform
+    transform <| Math.affTranslate <| Math.Translation tx ty
+
+
+{-| Scale a drawing.
+-}
+scale : ( Float, Float ) -> Drawing msg -> Drawing msg
+scale ( sx, sy ) =
+    transform <| Math.affScale <| Math.Scale sx sy
 
 
 {-| Rotate clockwise by a value in degrees about a point.
@@ -208,14 +216,39 @@ group =
 
 {-| Tag a coordinate system.
 
-This tags the coordinate system of a particular drawing with the name supplied.
-All coordinate systems that are part of a drawing are made available to
-mouse events that are later registered for that drawing.
+A drawing which tags its local coordinate system with a name.
 
 -}
-tagCSys : CSysName -> Drawing msg -> Drawing msg
+tagCSys : CSysName -> Drawing msg
 tagCSys name =
     DrawingTagCSys name
+
+
+{-| Prepend a namespace to any anchor names in the drawing.
+-}
+prependAnchorNamespace : String -> Drawing msg -> Drawing msg
+prependAnchorNamespace name =
+    DrawingPrependAnchorNamespace (anchorNamespace name)
+
+
+{-| Drop an anchor at the specified location in the drawing.
+-}
+dropAnchor : String -> ( Float, Float ) -> Drawing msg
+dropAnchor name ( locX, locY ) =
+    DrawingDropAnchor (anchorName name) (Math.p2 locX locY)
+
+
+{-| Create a drawing using anchor locations.
+
+`weighAnchors` is called with a generation function, that can generate a
+drawing based on previously-defined anchor locations. In turn, that
+function will be called with a function that can retreive any previously
+dropped anchors.
+
+-}
+weighAnchors : ((String -> ( Float, Float )) -> Drawing msg) -> Drawing msg
+weighAnchors createFn =
+    DrawingWeighAnchors createFn
 
 
 {-| Set the style of a drawing.
@@ -398,6 +431,11 @@ The decorators are returned in the sequence they should be applied.
 styleGetDecorators : Style msg -> List (Decorator msg)
 styleGetDecorators (Style styl) =
     styl.decorators |> List.reverse
+
+
+styleHasDecorators : Style msg -> Bool
+styleHasDecorators (Style styl) =
+    not (List.isEmpty styl.decorators)
 
 
 {-| Append a custom SVG attribute.
@@ -925,17 +963,133 @@ render viewBox drawing =
 {-| Render a diagram to an SVG element.
 -}
 renderSvgElement : ViewBox -> Drawing msg -> Svg msg
-renderSvgElement viewBox =
-    renderWithState (initState viewBox)
+renderSvgElement viewBox drawing =
+    renderRecurseDiscardWithDefault (initState viewBox) drawing
 
 
+{-| Overall state of the evaluator.
+
+This is split into:
+
+1.  Nested state, which strictly follows the nesting of the Drawing.
+2.  Threaded state, which is threaded in the direction of a depth-first
+    traversal.
+
+-}
 type State msg
     = State
+        { nested : NestedState msg
+        , threaded : ThreadedState
+        }
+
+
+stateGetNested : State msg -> NestedState msg
+stateGetNested (State state) =
+    state.nested
+
+
+stateGetThreaded : State msg -> ThreadedState
+stateGetThreaded (State state) =
+    state.threaded
+
+
+{-| State that strictly follows the nesting structure.
+-}
+type NestedState msg
+    = NestedState
         { style : Style msg
         , events : Events msg
         , localToWorld : AffineTransform
+        , anchorNS : List AnchorNamespace
         , viewBox : ViewBox
-        , coordinateSystems : CSysDict
+        }
+
+
+nestedGetStyle : NestedState msg -> Style msg
+nestedGetStyle (NestedState nested) =
+    nested.style
+
+
+nestedGetEvents : NestedState msg -> Events msg
+nestedGetEvents (NestedState nested) =
+    nested.events
+
+
+nestedGetLocalToWorld : NestedState msg -> AffineTransform
+nestedGetLocalToWorld (NestedState nested) =
+    nested.localToWorld
+
+
+nestedGetAnchorNamespaces : NestedState msg -> List AnchorNamespace
+nestedGetAnchorNamespaces (NestedState nested) =
+    nested.anchorNS
+
+
+nestedCombineStyles : Style msg -> NestedState msg -> NestedState msg
+nestedCombineStyles childStyle (NestedState parent) =
+    NestedState { parent | style = combineStyles parent.style childStyle }
+
+
+nestedCombineEvents : Events msg -> NestedState msg -> NestedState msg
+nestedCombineEvents childEvents (NestedState parent) =
+    NestedState { parent | events = combineEvents parent.events childEvents }
+
+
+nestedComposeTransform : AffineTransform -> NestedState msg -> NestedState msg
+nestedComposeTransform childTransform (NestedState parent) =
+    NestedState
+        { parent
+            | localToWorld = Math.affMul parent.localToWorld childTransform
+        }
+
+
+nestedPrependAnchorNamespace :
+    AnchorNamespace
+    -> NestedState msg
+    -> NestedState msg
+nestedPrependAnchorNamespace namespace (NestedState parent) =
+    NestedState
+        { parent
+            | anchorNS = namespace :: parent.anchorNS
+        }
+
+
+{-| State that is threaded through a depth-first evaluation.
+-}
+type ThreadedState
+    = ThreadedState
+        { coordinateSystems : CSysDict
+        , droppedAnchors : AnchorDict
+        }
+
+
+threadedGetCoordinateSystems : ThreadedState -> CSysDict
+threadedGetCoordinateSystems (ThreadedState threaded) =
+    threaded.coordinateSystems
+
+
+threadedGetDroppedAnchors : ThreadedState -> AnchorDict
+threadedGetDroppedAnchors (ThreadedState threaded) =
+    threaded.droppedAnchors
+
+
+threadedInsertCoordinateSystem :
+    ( CSysName, AffineTransform )
+    -> ThreadedState
+    -> ThreadedState
+threadedInsertCoordinateSystem pair (ThreadedState parent) =
+    ThreadedState
+        { parent
+            | coordinateSystems = insertCSys pair parent.coordinateSystems
+        }
+
+
+threadedDropAnchor : ( AnchorName, P2 ) -> ThreadedState -> ThreadedState
+threadedDropAnchor pair (ThreadedState parent) =
+    ThreadedState
+        { parent
+            | droppedAnchors =
+                insertAnchorWorldLocation pair parent.droppedAnchors
         }
 
 
@@ -952,168 +1106,341 @@ initState viewBox =
                 ]
     in
     State
-        { style = styleDefault
-        , events = emptyEvents
-        , localToWorld = localToWorld
-        , viewBox = viewBox
-        , coordinateSystems = emptyCSysDict
+        { nested =
+            NestedState
+                { style = styleDefault
+                , events = emptyEvents
+                , localToWorld = localToWorld
+                , anchorNS = []
+                , viewBox = viewBox
+                }
+        , threaded =
+            ThreadedState
+                { coordinateSystems = emptyCSysDict
+                , droppedAnchors = emptyAnchorDict
+                }
         }
 
 
-stateStyle : State msg -> Style msg
-stateStyle (State state) =
-    state.style
+stateSetThreaded : ThreadedState -> State msg -> State msg
+stateSetThreaded newThreadedState (State old) =
+    State { old | threaded = newThreadedState }
 
 
-stateEvents : State msg -> Events msg
-stateEvents (State state) =
-    state.events
+stateSetNested : NestedState msg -> State msg -> State msg
+stateSetNested newNestedState (State old) =
+    State { old | nested = newNestedState }
 
 
-stateLocalToWorld : State msg -> AffineTransform
-stateLocalToWorld (State state) =
-    state.localToWorld
-
-
-stateViewBox : State msg -> ViewBox
-stateViewBox (State state) =
-    state.viewBox
-
-
-stateCoordinateSystems : State msg -> CSysDict
-stateCoordinateSystems (State state) =
-    state.coordinateSystems
-
-
-stateCombineStyles : State msg -> Style msg -> State msg
-stateCombineStyles (State parent) child =
-    State { parent | style = combineStyles parent.style child }
-
-
-stateCombineEvents : State msg -> Events msg -> State msg
-stateCombineEvents (State parent) child =
-    State { parent | events = combineEvents parent.events child }
-
-
-stateComposeTransform : State msg -> AffineTransform -> State msg
-stateComposeTransform (State parent) child =
-    State { parent | localToWorld = Math.affMul parent.localToWorld child }
-
-
-stateInsertCoordinateSystem :
-    ( CSysName, AffineTransform )
+stateUpdateNested :
+    (NestedState msg -> NestedState msg)
     -> State msg
     -> State msg
-stateInsertCoordinateSystem pair (State parent) =
-    State
-        { parent
-            | coordinateSystems =
-                insertCSys pair parent.coordinateSystems
-        }
+stateUpdateNested updater (State old) =
+    stateSetNested (updater old.nested) (State old)
 
 
-{-| Render a diagram as SVG.
+stateCombineStyles : Style msg -> State msg -> State msg
+stateCombineStyles childStyle =
+    stateUpdateNested <| nestedCombineStyles childStyle
 
-This is a recursive evaluator for now. If necessary, it can be converted to
-use something like a CEK machine.
 
--}
-renderWithState : State msg -> Drawing msg -> Svg msg
-renderWithState state drawing =
-    let
-        styl : Style msg
-        styl =
-            state |> stateStyle
+stateCombineEvents : Events msg -> State msg -> State msg
+stateCombineEvents childEvents =
+    stateUpdateNested <| nestedCombineEvents childEvents
 
-        events : Events msg
-        events =
-            state |> stateEvents
 
-        localToWorld : AffineTransform
-        localToWorld =
-            state |> stateLocalToWorld
+stateComposeTransform : AffineTransform -> State msg -> State msg
+stateComposeTransform childTransform =
+    stateUpdateNested <| nestedComposeTransform childTransform
 
-        decorators : List (Decorator msg)
-        decorators =
-            styl |> styleGetDecorators
-    in
+
+statePrependAnchorNamespace : AnchorNamespace -> State msg -> State msg
+statePrependAnchorNamespace ns =
+    stateUpdateNested <| nestedPrependAnchorNamespace ns
+
+
+renderRecurse : State msg -> Drawing msg -> ( ThreadedState, Maybe (Svg msg) )
+renderRecurse state drawing =
     case drawing of
         DrawingEmpty ->
-            TypedSvg.g [] []
+            renderRecurseEmpty state
 
-        DrawingPath pth ->
-            if List.isEmpty decorators then
-                -- The style has no decorators. This means the path has no
-                -- further processing required and will be dumped to SVG
-                -- directly.
-                case pth of
-                    Math.EmptyPath ->
-                        -- For an empty path, we dump out an empty group, with
-                        -- a `display = "none"` attribute.
-                        TypedSvg.g [ SvgAttributes.display DisplayNone ] []
+        DrawingPath drawPath ->
+            renderRecursePath state drawPath
 
-                    Math.Path _ ->
-                        let
-                            styleAttributes =
-                                styleToAttributes styl
+        DrawingSvg svgFunction ->
+            renderRecurseSvg state svgFunction
 
-                            eventAttributes =
-                                eventsToAttributes
-                                    localToWorld
-                                    (stateCoordinateSystems state)
-                                    events
+        DrawingStyled sty child ->
+            renderRecurseStyled state sty child
 
-                            pathAttr =
-                                Math.affApplyPath localToWorld pth
-                                    |> Math.toSvgPPath
-                                    |> SvgAttributes.d
-
-                            attributes =
-                                pathAttr
-                                    :: (styleAttributes
-                                            ++ eventAttributes
-                                       )
-                        in
-                        TypedSvg.path attributes []
-
-            else
-                -- The style has decorators, so we must process them to
-                -- produce a new drawing. At this point, we strip out all
-                -- the previous transformations and style, since the
-                -- decorator has access to those directly.
-                let
-                    xfpath =
-                        Math.affApplyPath localToWorld pth
-                in
-                List.map
-                    (\(Decorator f) -> f styl localToWorld xfpath)
-                    decorators
-                    |> group
-                    |> renderWithState (initState (stateViewBox state))
-
-        DrawingSvg mkSvgChild ->
-            mkSvgChild styl localToWorld
-
-        DrawingStyled parentStyle childDrawing ->
-            renderWithState
-                (stateCombineStyles state parentStyle)
-                childDrawing
-
-        DrawingTransformed childToParent childDrawing ->
-            renderWithState
-                (stateComposeTransform state childToParent)
-                childDrawing
+        DrawingTransformed affineTransform child ->
+            renderRecurseTransformed state affineTransform child
 
         DrawingGroup children ->
-            TypedSvg.g [] <| List.map (renderWithState state) children
+            renderRecurseGroup state children
 
-        DrawingEvents evts childDrawing ->
-            renderWithState (stateCombineEvents state evts) childDrawing
+        DrawingEvents events child ->
+            renderRecurseEvents state events child
 
-        DrawingTagCSys cSysName childDrawing ->
-            renderWithState
-                (stateInsertCoordinateSystem ( cSysName, localToWorld ) state)
-                childDrawing
+        DrawingTagCSys csysName ->
+            renderRecurseTagCSys state csysName
+
+        DrawingPrependAnchorNamespace nameCmp child ->
+            renderRecursePrependAnchorNamespace state nameCmp child
+
+        DrawingDropAnchor nameCmp location ->
+            renderRecurseDropAnchor state nameCmp location
+
+        DrawingWeighAnchors createFn ->
+            renderRecurseWeighAnchors state createFn
+
+
+{-| Same as `renderRecurse`, but it packs the threaded state back into the
+original state.
+-}
+renderRecurseState : State msg -> Drawing msg -> ( State msg, Maybe (Svg msg) )
+renderRecurseState state dwg =
+    let
+        ( threadedState, result ) =
+            renderRecurse state dwg
+    in
+    ( stateSetThreaded threadedState state, result )
+
+
+{-| Same as `renderRecurse`, but discards the final threaded state.
+-}
+renderRecurseDiscard : State msg -> Drawing msg -> Maybe (Svg msg)
+renderRecurseDiscard state dwg =
+    let
+        ( _, result ) =
+            renderRecurse state dwg
+    in
+    result
+
+
+{-| Same as `renderRecurseDiscard`, but returns a default, empty SVG
+if no SVG was produced.
+-}
+renderRecurseDiscardWithDefault : State msg -> Drawing msg -> Svg msg
+renderRecurseDiscardWithDefault state dwg =
+    renderRecurseDiscard state dwg |> Maybe.withDefault emptySvg
+
+
+{-| A notionally-empty SVG.
+-}
+emptySvg : Svg msg
+emptySvg =
+    TypedSvg.g [ SvgAttributes.display DisplayNone ] []
+
+
+renderRecurseEmpty : State msg -> ( ThreadedState, Maybe (Svg msg) )
+renderRecurseEmpty state =
+    ( stateGetThreaded state, Nothing )
+
+
+renderRecursePath : State msg -> Path -> ( ThreadedState, Maybe (Svg msg) )
+renderRecursePath state pth =
+    if state |> stateGetNested >> nestedGetStyle >> styleHasDecorators then
+        renderRecurseDecoratedPath state pth
+
+    else
+        renderRecurseSimplePath state pth
+
+
+renderRecurseSimplePath :
+    State msg
+    -> Path
+    -> ( ThreadedState, Maybe (Svg msg) )
+renderRecurseSimplePath state pth =
+    let
+        l2w =
+            state |> stateGetNested >> nestedGetLocalToWorld
+
+        csys =
+            state |> stateGetThreaded >> threadedGetCoordinateSystems
+
+        styleAttr =
+            state |> stateGetNested >> nestedGetStyle >> styleToAttributes
+
+        eventAttr =
+            state
+                |> stateGetNested
+                >> nestedGetEvents
+                >> eventsToAttributes l2w csys
+
+        pathAttr =
+            pth |> Math.affApplyPath l2w >> Math.toSvgPPath >> SvgAttributes.d
+
+        outMaybeSvg =
+            case pth of
+                EmptyPath ->
+                    Nothing
+
+                Path _ ->
+                    Just <|
+                        TypedSvg.path (pathAttr :: styleAttr ++ eventAttr) []
+    in
+    ( stateGetThreaded state, outMaybeSvg )
+
+
+renderRecurseDecoratedPath :
+    State msg
+    -> Path
+    -> ( ThreadedState, Maybe (Svg msg) )
+renderRecurseDecoratedPath state _ =
+    -- TODO
+    ( stateGetThreaded state, Nothing )
+
+
+renderRecurseSvg :
+    State msg
+    -> (Style msg -> AffineTransform -> Svg msg)
+    -> ( ThreadedState, Maybe (Svg msg) )
+renderRecurseSvg state svgFunction =
+    ( stateGetThreaded state
+    , svgFunction
+        (stateGetNested >> nestedGetStyle <| state)
+        (stateGetNested >> nestedGetLocalToWorld <| state)
+        |> Just
+    )
+
+
+renderRecurseStyled :
+    State msg
+    -> Style msg
+    -> Drawing msg
+    -> ( ThreadedState, Maybe (Svg msg) )
+renderRecurseStyled state sty childDrawing =
+    renderRecurse (stateCombineStyles sty state) childDrawing
+
+
+renderRecurseTransformed :
+    State msg
+    -> AffineTransform
+    -> Drawing msg
+    -> ( ThreadedState, Maybe (Svg msg) )
+renderRecurseTransformed state xf childDrawing =
+    renderRecurse (stateComposeTransform xf state) childDrawing
+
+
+renderRecurseGroup :
+    State msg
+    -> List (Drawing msg)
+    -> ( ThreadedState, Maybe (Svg msg) )
+renderRecurseGroup state drawings =
+    let
+        renderRecurseGroupFold :
+            Drawing msg
+            -> ( State msg, List (Maybe (Svg msg)) )
+            -> ( State msg, List (Maybe (Svg msg)) )
+        renderRecurseGroupFold dwg ( stepInState, accum ) =
+            let
+                ( stepOutState, producedSvg ) =
+                    renderRecurseState stepInState dwg
+            in
+            ( stepOutState, producedSvg :: accum )
+
+        groupSvg : List (Maybe (Svg msg)) -> Maybe (Svg msg)
+        groupSvg maybeSvgs =
+            List.filterMap identity maybeSvgs
+                |> (\svgList ->
+                        if List.isEmpty svgList then
+                            Nothing
+
+                        else
+                            List.reverse svgList |> TypedSvg.g [] |> Just
+                   )
+    in
+    List.foldl renderRecurseGroupFold ( state, [] ) drawings
+        |> (\( finalState, maybeSvgs ) ->
+                ( stateGetThreaded finalState
+                , groupSvg maybeSvgs
+                )
+           )
+
+
+renderRecurseEvents :
+    State msg
+    -> Events msg
+    -> Drawing msg
+    -> ( ThreadedState, Maybe (Svg msg) )
+renderRecurseEvents state events childDrawing =
+    renderRecurse (stateCombineEvents events state) childDrawing
+
+
+renderRecurseTagCSys :
+    State msg
+    -> CSysName
+    -> ( ThreadedState, Maybe (Svg msg) )
+renderRecurseTagCSys state cSysName =
+    ( stateGetThreaded state
+        |> threadedInsertCoordinateSystem
+            ( cSysName
+            , (stateGetNested >> nestedGetLocalToWorld) state
+            )
+    , Nothing
+    )
+
+
+renderRecursePrependAnchorNamespace :
+    State msg
+    -> AnchorNamespace
+    -> Drawing msg
+    -> ( ThreadedState, Maybe (Svg msg) )
+renderRecursePrependAnchorNamespace state ns childDrawing =
+    renderRecurse (statePrependAnchorNamespace ns state) childDrawing
+
+
+renderRecurseDropAnchor :
+    State msg
+    -> AnchorName
+    -> P2
+    -> ( ThreadedState, Maybe (Svg msg) )
+renderRecurseDropAnchor state name localPt =
+    ( state
+        |> stateGetThreaded
+        |> threadedDropAnchor
+            ( anchorNamePrependAll
+                (state |> stateGetNested >> nestedGetAnchorNamespaces)
+                name
+            , Math.affApplyP2
+                (state |> stateGetNested >> nestedGetLocalToWorld)
+                localPt
+            )
+    , Nothing
+    )
+
+
+renderRecurseWeighAnchors :
+    State msg
+    -> ((String -> ( Float, Float )) -> Drawing msg)
+    -> ( ThreadedState, Maybe (Svg msg) )
+renderRecurseWeighAnchors state createFn =
+    let
+        anchorFn : String -> ( Float, Float )
+        anchorFn aname =
+            state
+                |> stateGetThreaded
+                >> threadedGetDroppedAnchors
+                >> getAnchorWorldLocation (anchorName aname)
+                >> Maybe.map
+                    (Math.affApplyP2
+                        (state
+                            |> stateGetNested
+                            >> nestedGetLocalToWorld
+                            >> Math.affInvert
+                        )
+                    )
+                >> Maybe.map (\p -> ( Math.p2x p, Math.p2y p ))
+                >> Maybe.withDefault ( 0, 0 )
+
+        createdDrawing : Drawing msg
+        createdDrawing =
+            createFn anchorFn
+    in
+    renderRecurse state createdDrawing
 
 
 {-| Convert a style to a list of SVG attributes.
@@ -1174,3 +1501,99 @@ insertCSys ( CSysName name, localToWorld ) (CSysDict dict) =
 getCSys : CSysName -> CSysDict -> Maybe AffineTransform
 getCSys (CSysName name) (CSysDict dict) =
     Dict.get name dict
+
+
+
+---- Anchors ------------------------------------------------------------------
+
+
+{-| Anchor namespace.
+-}
+type AnchorNamespace
+    = AnchorNamespace String
+
+
+{-| Create an `AnchorNamespace`.
+
+The string name of an `AnchorNamespace` cannot contain `'.'` characters. If a
+string is supplied containing these characters, they will be filtered out.
+
+-}
+anchorNamespace : String -> AnchorNamespace
+anchorNamespace ns =
+    String.filter (\c -> c /= '.') ns |> AnchorNamespace
+
+
+{-| Anchor name.
+-}
+type AnchorName
+    = AnchorName (List AnchorNamespace) String
+
+
+{-| Create an `AnchorName`.
+
+If any `'.'` characters are supplied in the name then they are assumed to
+separate namespaces.
+
+-}
+anchorName : String -> AnchorName
+anchorName name =
+    String.split "." name
+        |> (\strs ->
+                case List.reverse strs of
+                    [] ->
+                        AnchorName [] ""
+
+                    n :: [] ->
+                        AnchorName [] n
+
+                    n :: ns ->
+                        AnchorName
+                            (List.reverse ns |> List.map anchorNamespace)
+                            n
+           )
+
+
+{-| Prepend a new namespace to an existing anchor name.
+-}
+anchorNamePrependAll : List AnchorNamespace -> AnchorName -> AnchorName
+anchorNamePrependAll newns (AnchorName ns n) =
+    AnchorName (newns ++ ns) n
+
+
+{-| Convert an anchor name to a string.
+-}
+anchorNameToString : AnchorName -> String
+anchorNameToString (AnchorName ns n) =
+    (List.map (\(AnchorNamespace namespaceStr) -> namespaceStr) ns
+        |> String.join "."
+    )
+        ++ "."
+        ++ n
+
+
+{-| Dictionary of anchor names (as strings) to their world coordinates.
+-}
+type AnchorDict
+    = AnchorDict (Dict String P2)
+
+
+{-| Create an empty `AnchorDict`.
+-}
+emptyAnchorDict : AnchorDict
+emptyAnchorDict =
+    AnchorDict <| Dict.empty
+
+
+{-| Insert an anchor location into the dictionary.
+-}
+insertAnchorWorldLocation : ( AnchorName, P2 ) -> AnchorDict -> AnchorDict
+insertAnchorWorldLocation ( aname, location ) (AnchorDict dict) =
+    AnchorDict <| Dict.insert (anchorNameToString aname) location dict
+
+
+{-| Get the location of an anchor from the dictionary in world coordinates.
+-}
+getAnchorWorldLocation : AnchorName -> AnchorDict -> Maybe P2
+getAnchorWorldLocation aname (AnchorDict dict) =
+    Dict.get (anchorNameToString aname) dict
