@@ -13,23 +13,23 @@ import Techdraw
     exposing
         ( CSysName(..)
         , Drawing
+        , dropAnchor
         , fill
         , group
         , onMouseEnter
         , onMouseLeave
-        , onMouseMove
         , path
+        , prependAnchorNamespace
         , render
-        , rotateAbout
-        , skewX
+        , scale
         , stroke
         , strokeWidth
         , tagCSys
-        , transform
-        , translate
+        , weighAnchors
         )
-import Techdraw.Math exposing (P2, Scale(..), affScale, p2x, p2y)
-import Techdraw.Shapes.Simple exposing (circle, ellipse, rectRounded)
+import Techdraw.Math exposing (P2, Scale(..), p2x, p2y)
+import Techdraw.PathBuilder as PB
+import Techdraw.Shapes.Simple exposing (rect, rectRounded)
 import TypedSvg.Types exposing (Paint(..))
 
 
@@ -51,49 +51,61 @@ init =
     Model { color = blue, coords = Nothing }
 
 
-rectangle =
-    let
-        r =
-            rectRounded
-                { x = 2
-                , y = 2
-                , width = 6
-                , height = 6
-                , rx = 1
-                , ry = 1
-                }
-    in
-    r
-
-
 drawing : Model -> Drawing Msg
 drawing (Model model) =
     group
-        [ path
-            rectangle
-            |> fill (Paint model.color)
-            |> stroke (Paint black)
-            |> strokeWidth 2
-            |> transform (affScale <| Scale 10 10)
-            |> tagCSys (CSysName "eventCSys")
-            |> translate ( -50, -50 )
-            |> skewX 10
-            |> translate ( 50, 50 )
-            |> rotateAbout 10 ( 50, 50 )
-            |> onMouseEnter (\_ -> MouseEnter)
-            |> onMouseLeave (\_ -> MouseLeave)
-            |> onMouseMove
-                (\info ->
-                    MouseMove <| info.pointIn (CSysName "eventCSys")
-                )
-        , path (circle { r = 40, cx = 50, cy = 50 })
-            |> fill PaintNone
-            |> stroke (Paint green)
-            |> strokeWidth 5
-        , path (ellipse { rx = 20, ry = 40, cx = 50, cy = 50 })
-            |> fill PaintNone
-            |> stroke (Paint purple)
-            |> strokeWidth 3
+        [ group
+            [ tagCSys (CSysName "eventCSys")
+            , path
+                (rect { x = 0, y = 0, width = 60, height = 60 })
+                |> fill (Paint Color.lightGreen)
+            , group
+                [ path
+                    (rectRounded
+                        { x = 5
+                        , y = 20
+                        , width = 20
+                        , height = 20
+                        , rx = 5
+                        , ry = 5
+                        }
+                    )
+                    |> fill (Paint model.color)
+                    |> onMouseEnter (\_ -> MouseEnter)
+                    |> onMouseLeave (\_ -> MouseLeave)
+                , dropAnchor "right" ( 25, 30 )
+                ]
+                |> prependAnchorNamespace "leftBox"
+            , group
+                [ path
+                    (rectRounded
+                        { x = 60 - 5 - 20
+                        , y = 20
+                        , width = 20
+                        , height = 20
+                        , rx = 5
+                        , ry = 5
+                        }
+                    )
+                    |> fill (Paint Color.orange)
+                , dropAnchor "left" ( 60 - 5 - 20, 30 )
+                ]
+                |> prependAnchorNamespace "rightBox"
+            ]
+            |> scale ( 10, 10 )
+        , group
+            [ weighAnchors <|
+                \getAnchor ->
+                    path
+                        (PB.empty
+                            |> PB.moveTo (getAnchor "leftBox.right")
+                            |> PB.lineTo (getAnchor "rightBox.left")
+                            |> PB.createPath
+                        )
+                        |> stroke (Paint Color.purple)
+                        |> strokeWidth 20
+            ]
+            |> scale ( 100, 100 )
         ]
 
 
@@ -111,8 +123,8 @@ view model =
         viewBox =
             { minX = 0
             , minY = 0
-            , width = 100
-            , height = 100
+            , width = 600
+            , height = 600
             }
 
         coordStr =
