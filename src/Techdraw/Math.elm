@@ -4,13 +4,13 @@ module Techdraw.Math exposing
     , angle2Pi, anglePi, orientationPi
     , getAngle2Pi, getAnglePi, getOrientationPi
     , M22(..), V2(..)
-    , m22, v2
+    , m22, v2, v2x, v2y
     , v2Mag, v2Add, v2Sub, v2Norm, v2Scale, v2Div, v2ContainsNaN
     , m22Identity, m22Rotation, m22Scale, m22ShearX
     , m22Mul, m22Div, m22v2Mul, m22Inv, m22Det
     , P2
     , p2, p2x, p2y, p2v, v2p
-    , p2Distance
+    , p2Sub, p2Distance
     , AffineTransformComponent(..)
     , Translation(..), Rotation(..), Scale(..), ShearX(..)
     , applyAffineTransformComponent
@@ -76,7 +76,7 @@ provided for this are the following:
 
 ## Functions
 
-@docs m22, v2
+@docs m22, v2, v2x, v2y
 @docs v2Mag, v2Add, v2Sub, v2Norm, v2Scale, v2Div, v2ContainsNaN
 @docs m22Identity, m22Rotation, m22Scale, m22ShearX
 @docs m22Mul, m22Div, m22v2Mul, m22Inv, m22Det
@@ -93,7 +93,7 @@ provided for this are the following:
 ## Functions
 
 @docs p2, p2x, p2y, p2v, v2p
-@docs p2Distance
+@docs p2Sub, p2Distance
 
 
 # Affine Transformation Components
@@ -374,6 +374,20 @@ type V2
         }
 
 
+{-| Return the "e1" or "x" component of a vector.
+-}
+v2x : V2 -> Float
+v2x (V2 v) =
+    v.e1
+
+
+{-| Return the "e2" or "y" component of a vector.
+-}
+v2y : V2 -> Float
+v2y (V2 v) =
+    v.e2
+
+
 {-| Create an `M22` matrix from its row-major elements.
 
     mkM22 e11 e12 e21 e22
@@ -577,6 +591,13 @@ p2v (P2 v) =
 v2p : V2 -> P2
 v2p =
     P2
+
+
+{-| Subtract a point from another point, yielding a vector.
+-}
+p2Sub : P2 -> P2 -> V2
+p2Sub a b =
+    v2Sub (p2v a) (p2v b)
 
 
 {-| Distance between two points.

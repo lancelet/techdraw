@@ -2,21 +2,22 @@ module Techdraw exposing
     ( Drawing
     , ViewBox
     , render, renderSvgElement
-    , empty, path, svg, group, tagCSys, transform
+    , empty, path, svg, group, map, tagCSys, transform
     , prependAnchorNamespace, dropAnchor, weighAnchors
     , translate, rotateAbout, scale, skewX
     , style
-    , fill, stroke, strokeWidth
+    , fill, stroke, strokeWidth, strokeLinecap, strokeLinejoin
     , onClick, onContextMenu, onDblClick, onMouseDown
     , onMouseEnter, onMouseLeave, onMouseMove
     , onMouseOut, onMouseOver, onMouseUp
+    , onHostMouseLeave, onHostMouseMove, onHostMouseUp
     , Style
     , styleDefault, styleInheritAll
     , styleSetFill, styleSetStroke, styleSetStrokeWidth
+    , styleSetStrokeLinecap, styleSetStrokeLinejoin
     , styleGetFill, styleGetStroke, styleGetStrokeWidth
-    , styleAppendDecorator, styleAppendAttribute
-    , styleGetDecorators, styleGetAttributes
-    , Decorator(..)
+    , styleGetStrokeLinecap, styleGetStrokeLinejoin
+    , styleAppendAttribute, styleGetAttributes
     , MouseInfo, ModifierKeys, MouseButtons
     , MouseButtonState(..), KeyPressState(..)
     , CSysName(..)
@@ -44,7 +45,7 @@ module Techdraw exposing
 
 ### First-class Operations
 
-@docs empty, path, svg, group, tagCSys, transform
+@docs empty, path, svg, group, map, tagCSys, transform
 @docs prependAnchorNamespace, dropAnchor, weighAnchors
 
 
@@ -56,7 +57,7 @@ module Techdraw exposing
 ## Styling Drawings
 
 @docs style
-@docs fill, stroke, strokeWidth
+@docs fill, stroke, strokeWidth, strokeLinecap, strokeLinejoin
 
 
 ## Handling Events
@@ -64,6 +65,7 @@ module Techdraw exposing
 @docs onClick, onContextMenu, onDblClick, onMouseDown
 @docs onMouseEnter, onMouseLeave, onMouseMove
 @docs onMouseOut, onMouseOver, onMouseUp
+@docs onHostMouseLeave, onHostMouseMove, onHostMouseUp
 
 
 # Styles
@@ -71,14 +73,10 @@ module Techdraw exposing
 @docs Style
 @docs styleDefault, styleInheritAll
 @docs styleSetFill, styleSetStroke, styleSetStrokeWidth
+@docs styleSetStrokeLinecap, styleSetStrokeLinejoin
 @docs styleGetFill, styleGetStroke, styleGetStrokeWidth
-@docs styleAppendDecorator, styleAppendAttribute
-@docs styleGetDecorators, styleGetAttributes
-
-
-# Path Decoration
-
-@docs Decorator
+@docs styleGetStrokeLinecap, styleGetStrokeLinejoin
+@docs styleAppendAttribute, styleGetAttributes
 
 
 # Event Information
@@ -101,9 +99,9 @@ import Json.Decode as Decode exposing (Decoder)
 import Techdraw.Math as Math exposing (AffineTransform(..), P2, Path(..))
 import TypedSvg
 import TypedSvg.Attributes as SvgAttributes
-import TypedSvg.Core exposing (Svg)
-import TypedSvg.Types exposing (Display(..), Paint, px)
-import VirtualDom exposing (Attribute)
+import TypedSvg.Core as TypedSvgCore exposing (Svg)
+import TypedSvg.Types exposing (Display(..), Paint, StrokeLinecap, StrokeLinejoin, px)
+import VirtualDom exposing (Attribute, mapAttribute)
 
 
 
@@ -115,11 +113,12 @@ import VirtualDom exposing (Attribute)
 type Drawing msg
     = DrawingEmpty
     | DrawingPath Path
-    | DrawingSvg (Style msg -> AffineTransform -> Svg msg)
+    | DrawingSvg (AffineTransform -> Svg msg)
     | DrawingStyled (Style msg) (Drawing msg)
     | DrawingTransformed AffineTransform (Drawing msg)
     | DrawingGroup (List (Drawing msg))
     | DrawingEvents (Events msg) (Drawing msg)
+    | DrawingHostEvents (Events msg) (Drawing msg)
     | DrawingTagCSys CSysName
     | DrawingPrependAnchorNamespace AnchorNamespace (Drawing msg)
     | DrawingDropAnchor AnchorName P2
@@ -142,11 +141,11 @@ path =
 
 {-| Draw some SVG directly.
 
-The function provided takes the current style and local-to-world
-transformation so that it can produce custom SVG.
+The function provided takes the local-to-world transformation so that it can
+produce custom SVG.
 
 -}
-svg : (Style msg -> AffineTransform -> Svg msg) -> Drawing msg
+svg : (AffineTransform -> Svg msg) -> Drawing msg
 svg =
     DrawingSvg
 
@@ -299,6 +298,20 @@ strokeWidth width drawing =
     style (styleDefault |> styleSetStrokeWidth width) drawing
 
 
+{-| Set the stroke line cap.
+-}
+strokeLinecap : StrokeLinecap -> Drawing msg -> Drawing msg
+strokeLinecap lc drawing =
+    style (styleDefault |> styleSetStrokeLinecap lc) drawing
+
+
+{-| Set the stroke line join.
+-}
+strokeLinejoin : StrokeLinejoin -> Drawing msg -> Drawing msg
+strokeLinejoin lj drawing =
+    style (styleDefault |> styleSetStrokeLinejoin lj) drawing
+
+
 
 ---- Styles -------------------------------------------------------------------
 
@@ -345,7 +358,8 @@ type Style msg
         { fill : StyleSetting Paint
         , stroke : StyleSetting Paint
         , strokeWidth : StyleSetting Float
-        , decorators : List (Decorator msg)
+        , strokeLinecap : StyleSetting StrokeLinecap
+        , strokeLinejoin : StyleSetting StrokeLinejoin
         , extraAttributes : List (Attribute msg)
         }
 
@@ -369,7 +383,8 @@ styleInheritAll =
         { fill = Inherited
         , stroke = Inherited
         , strokeWidth = Inherited
-        , decorators = []
+        , strokeLinecap = Inherited
+        , strokeLinejoin = Inherited
         , extraAttributes = []
         }
 
@@ -416,26 +431,32 @@ styleGetStrokeWidth (Style styl) =
     styl.strokeWidth |> styleSettingToMaybe
 
 
-{-| Append a decorator.
+{-| Set the stroke line cap.
 -}
-styleAppendDecorator : Decorator msg -> Style msg -> Style msg
-styleAppendDecorator decorator (Style styl) =
-    Style <| { styl | decorators = decorator :: styl.decorators }
+styleSetStrokeLinecap : StrokeLinecap -> Style msg -> Style msg
+styleSetStrokeLinecap lc (Style styl) =
+    Style <| { styl | strokeLinecap = Set lc }
 
 
-{-| Return the decorators.
-
-The decorators are returned in the sequence they should be applied.
-
+{-| Get the stroke line cap.
 -}
-styleGetDecorators : Style msg -> List (Decorator msg)
-styleGetDecorators (Style styl) =
-    styl.decorators |> List.reverse
+styleGetStrokeLinecap : Style msg -> Maybe StrokeLinecap
+styleGetStrokeLinecap (Style styl) =
+    styl.strokeLinecap |> styleSettingToMaybe
 
 
-styleHasDecorators : Style msg -> Bool
-styleHasDecorators (Style styl) =
-    not (List.isEmpty styl.decorators)
+{-| Set the stroke line join.
+-}
+styleSetStrokeLinejoin : StrokeLinejoin -> Style msg -> Style msg
+styleSetStrokeLinejoin lj (Style styl) =
+    Style <| { styl | strokeLinejoin = Set lj }
+
+
+{-| Get the stroke line join.
+-}
+styleGetStrokeLinejoin : Style msg -> Maybe StrokeLinejoin
+styleGetStrokeLinejoin (Style styl) =
+    styl.strokeLinejoin |> styleSettingToMaybe
 
 
 {-| Append a custom SVG attribute.
@@ -473,48 +494,46 @@ combineStyles (Style parent) (Style child) =
         { fill = comb .fill
         , stroke = comb .stroke
         , strokeWidth = comb .strokeWidth
-        , decorators = child.decorators ++ parent.decorators
+        , strokeLinecap = comb .strokeLinecap
+        , strokeLinejoin = comb .strokeLinejoin
         , extraAttributes = child.extraAttributes ++ parent.extraAttributes
         }
 
 
 
 ---- Path Decoration ----------------------------------------------------------
+{- A decorator is a special styling operation that can operate on a
+   processed path.
 
+   A decorator runs on a path after:
 
-{-| A decorator is a special styling operation that can operate on a
-processed path.
+     - A collapsed style has been computed (taking into account the styles
+       of groups above the path, etc)
+     - The local-to-world transformation has been computed.
+     - The path has been transformed to world space.
 
-A decorator runs on a path after:
+   A `Decorator` can then modify the path as it sees fit, to produce a new
+   [`Drawing`](#Drawing). The original `Drawing` is discarded, so if the
+   aim is to retain it, then it must be part of the `Drawing` returned by
+   the `Decorator`.
 
-  - A collapsed style has been computed (taking into account the styles
-    of groups above the path, etc)
-  - The local-to-world transformation has been computed.
-  - The path has been transformed to world space.
+   TODO: There should probably be a different layout for decorators. For
+   example, we want to support decorator operations like this:
 
-A `Decorator` can then modify the path as it sees fit, to produce a new
-[`Drawing`](#Drawing). The original `Drawing` is discarded, so if the
-aim is to retain it, then it must be part of the `Drawing` returned by
-the `Decorator`.
-
-TODO: There should probably be a different layout for decorators. For
-example, we want to support decorator operations like this:
-
-  - Shorten a path, then add an arrow. This requires a sequencing of
-    secorators (shorten, THEN add arrow geometry). Currently, there's
-    no way to do sequencing.
+     - Shorten a path, then add an arrow. This requires a sequencing of
+       secorators (shorten, THEN add arrow geometry). Currently, there's
+       no way to do sequencing.
 
 -}
-type Decorator msg
-    = Decorator
-        (Style msg
-         -> AffineTransform
-         -> Path
-         -> Drawing msg
-        )
-
-
-
+{-
+   type Decorator msg
+       = Decorator
+           (Style msg
+            -> AffineTransform
+            -> Path
+            -> Drawing msg
+           )
+-}
 ---- Events -------------------------------------------------------------------
 
 
@@ -588,6 +607,27 @@ onMouseUp fn =
     fn |> MouseHandler |> MouseUp |> registerListener
 
 
+{-| Register an `onmouseleave` listener with the host SVG element.
+-}
+onHostMouseLeave : (MouseInfo -> msg) -> Drawing msg -> Drawing msg
+onHostMouseLeave fn =
+    fn |> MouseHandler |> MouseLeave |> registerHostListener
+
+
+{-| Register an `onmousemove` listener with the host SVG element.
+-}
+onHostMouseMove : (MouseInfo -> msg) -> Drawing msg -> Drawing msg
+onHostMouseMove fn =
+    fn |> MouseHandler |> MouseMove |> registerHostListener
+
+
+{-| Register an `onmouseup` listener with the host SVG element.
+-}
+onHostMouseUp : (MouseInfo -> msg) -> Drawing msg -> Drawing msg
+onHostMouseUp fn =
+    fn |> MouseHandler |> MouseUp |> registerHostListener
+
+
 {-| Register an event listener.
 -}
 registerListener : EventListener msg -> Drawing msg -> Drawing msg
@@ -598,6 +638,18 @@ registerListener listener drawing =
 
         _ ->
             DrawingEvents (newEventsWithListener listener) drawing
+
+
+{-| Register an event listener on the host SVG element.
+-}
+registerHostListener : EventListener msg -> Drawing msg -> Drawing msg
+registerHostListener listener drawing =
+    case drawing of
+        DrawingHostEvents events childDrawing ->
+            DrawingHostEvents (eventsAddListener listener events) childDrawing
+
+        _ ->
+            DrawingHostEvents (newEventsWithListener listener) drawing
 
 
 {-| Events.
@@ -839,7 +891,7 @@ mouseButtons =
             if
                 Bitwise.and
                     input
-                    (Bitwise.shiftLeftBy buttonNumber 0x01)
+                    (Bitwise.shiftLeftBy (buttonNumber - 1) 0x01)
                     == 0
             then
                 MouseButtonNotPressed
@@ -947,22 +999,28 @@ height and width of the `ViewBox`.
 -}
 render : ViewBox -> Drawing msg -> Html msg
 render viewBox drawing =
+    let
+        ( svgContent, hostAttrs ) =
+            renderSvgElement viewBox drawing
+    in
     TypedSvg.svg
-        [ SvgAttributes.width (px viewBox.width)
-        , SvgAttributes.height (px viewBox.height)
-        , SvgAttributes.viewBox
+        ([ SvgAttributes.width (px viewBox.width)
+         , SvgAttributes.height (px viewBox.height)
+         , SvgAttributes.viewBox
             viewBox.minX
             viewBox.minY
             viewBox.width
             viewBox.height
-        ]
-        [ renderSvgElement viewBox drawing
+         ]
+            ++ hostAttrs
+        )
+        [ svgContent
         ]
 
 
 {-| Render a diagram to an SVG element.
 -}
-renderSvgElement : ViewBox -> Drawing msg -> Svg msg
+renderSvgElement : ViewBox -> Drawing msg -> ( Svg msg, List (Attribute msg) )
 renderSvgElement viewBox drawing =
     renderRecurseDiscardWithDefault (initState viewBox) drawing
 
@@ -979,7 +1037,7 @@ This is split into:
 type State msg
     = State
         { nested : NestedState msg
-        , threaded : ThreadedState
+        , threaded : ThreadedState msg
         }
 
 
@@ -988,7 +1046,7 @@ stateGetNested (State state) =
     state.nested
 
 
-stateGetThreaded : State msg -> ThreadedState
+stateGetThreaded : State msg -> ThreadedState msg
 stateGetThreaded (State state) =
     state.threaded
 
@@ -1025,6 +1083,11 @@ nestedGetAnchorNamespaces (NestedState nested) =
     nested.anchorNS
 
 
+nestedGetViewBox : NestedState msg -> ViewBox
+nestedGetViewBox (NestedState nested) =
+    nested.viewBox
+
+
 nestedCombineStyles : Style msg -> NestedState msg -> NestedState msg
 nestedCombineStyles childStyle (NestedState parent) =
     NestedState { parent | style = combineStyles parent.style childStyle }
@@ -1035,12 +1098,16 @@ nestedCombineEvents childEvents (NestedState parent) =
     NestedState { parent | events = combineEvents parent.events childEvents }
 
 
+nestedSetLocalToWorld : AffineTransform -> NestedState msg -> NestedState msg
+nestedSetLocalToWorld l2w (NestedState parent) =
+    NestedState { parent | localToWorld = l2w }
+
+
 nestedComposeTransform : AffineTransform -> NestedState msg -> NestedState msg
 nestedComposeTransform childTransform (NestedState parent) =
-    NestedState
-        { parent
-            | localToWorld = Math.affMul parent.localToWorld childTransform
-        }
+    nestedSetLocalToWorld
+        (Math.affMul parent.localToWorld childTransform)
+        (NestedState parent)
 
 
 nestedPrependAnchorNamespace :
@@ -1056,27 +1123,33 @@ nestedPrependAnchorNamespace namespace (NestedState parent) =
 
 {-| State that is threaded through a depth-first evaluation.
 -}
-type ThreadedState
+type ThreadedState msg
     = ThreadedState
         { coordinateSystems : CSysDict
         , droppedAnchors : AnchorDict
+        , hostAttributes : List (Attribute msg)
         }
 
 
-threadedGetCoordinateSystems : ThreadedState -> CSysDict
+threadedGetCoordinateSystems : ThreadedState msg -> CSysDict
 threadedGetCoordinateSystems (ThreadedState threaded) =
     threaded.coordinateSystems
 
 
-threadedGetDroppedAnchors : ThreadedState -> AnchorDict
+threadedGetDroppedAnchors : ThreadedState msg -> AnchorDict
 threadedGetDroppedAnchors (ThreadedState threaded) =
     threaded.droppedAnchors
 
 
+threadedGetHostAttributes : ThreadedState msg -> List (Attribute msg)
+threadedGetHostAttributes (ThreadedState threaded) =
+    threaded.hostAttributes
+
+
 threadedInsertCoordinateSystem :
     ( CSysName, AffineTransform )
-    -> ThreadedState
-    -> ThreadedState
+    -> ThreadedState msg
+    -> ThreadedState msg
 threadedInsertCoordinateSystem pair (ThreadedState parent) =
     ThreadedState
         { parent
@@ -1084,7 +1157,10 @@ threadedInsertCoordinateSystem pair (ThreadedState parent) =
         }
 
 
-threadedDropAnchor : ( AnchorName, P2 ) -> ThreadedState -> ThreadedState
+threadedDropAnchor :
+    ( AnchorName, P2 )
+    -> ThreadedState msg
+    -> ThreadedState msg
 threadedDropAnchor pair (ThreadedState parent) =
     ThreadedState
         { parent
@@ -1093,24 +1169,23 @@ threadedDropAnchor pair (ThreadedState parent) =
         }
 
 
+threadedAddHostAttributes :
+    List (Attribute msg)
+    -> ThreadedState msg
+    -> ThreadedState msg
+threadedAddHostAttributes attrs (ThreadedState parent) =
+    ThreadedState
+        { parent | hostAttributes = attrs ++ parent.hostAttributes }
+
+
 initState : ViewBox -> State msg
 initState viewBox =
-    let
-        localToWorld =
-            Math.affFromComponents
-                [ Math.ComponentScale <| Math.Scale 1 -1
-                , Math.ComponentTranslation <|
-                    Math.Translation 0 viewBox.height
-                , Math.ComponentTranslation <|
-                    Math.Translation viewBox.minX viewBox.minY
-                ]
-    in
     State
         { nested =
             NestedState
                 { style = styleDefault
                 , events = emptyEvents
-                , localToWorld = localToWorld
+                , localToWorld = initLocalToWorld viewBox
                 , anchorNS = []
                 , viewBox = viewBox
                 }
@@ -1118,11 +1193,21 @@ initState viewBox =
             ThreadedState
                 { coordinateSystems = emptyCSysDict
                 , droppedAnchors = emptyAnchorDict
+                , hostAttributes = []
                 }
         }
 
 
-stateSetThreaded : ThreadedState -> State msg -> State msg
+initLocalToWorld : ViewBox -> AffineTransform
+initLocalToWorld vb =
+    Math.affFromComponents
+        [ Math.ComponentScale <| Math.Scale 1 -1
+        , Math.ComponentTranslation <| Math.Translation 0 vb.height
+        , Math.ComponentTranslation <| Math.Translation vb.minX vb.minY
+        ]
+
+
+stateSetThreaded : ThreadedState msg -> State msg -> State msg
 stateSetThreaded newThreadedState (State old) =
     State { old | threaded = newThreadedState }
 
@@ -1138,6 +1223,14 @@ stateUpdateNested :
     -> State msg
 stateUpdateNested updater (State old) =
     stateSetNested (updater old.nested) (State old)
+
+
+stateUpdateThreaded :
+    (ThreadedState msg -> ThreadedState msg)
+    -> State msg
+    -> State msg
+stateUpdateThreaded updater (State old) =
+    stateSetThreaded (updater old.threaded) (State old)
 
 
 stateCombineStyles : Style msg -> State msg -> State msg
@@ -1160,7 +1253,10 @@ statePrependAnchorNamespace ns =
     stateUpdateNested <| nestedPrependAnchorNamespace ns
 
 
-renderRecurse : State msg -> Drawing msg -> ( ThreadedState, Maybe (Svg msg) )
+renderRecurse :
+    State msg
+    -> Drawing msg
+    -> ( ThreadedState msg, Maybe (Svg msg) )
 renderRecurse state drawing =
     case drawing of
         DrawingEmpty ->
@@ -1183,6 +1279,9 @@ renderRecurse state drawing =
 
         DrawingEvents events child ->
             renderRecurseEvents state events child
+
+        DrawingHostEvents events child ->
+            renderRecurseHostEvents state events child
 
         DrawingTagCSys csysName ->
             renderRecurseTagCSys state csysName
@@ -1211,21 +1310,31 @@ renderRecurseState state dwg =
 
 {-| Same as `renderRecurse`, but discards the final threaded state.
 -}
-renderRecurseDiscard : State msg -> Drawing msg -> Maybe (Svg msg)
+renderRecurseDiscard :
+    State msg
+    -> Drawing msg
+    -> ( Maybe (Svg msg), List (Attribute msg) )
 renderRecurseDiscard state dwg =
     let
-        ( _, result ) =
+        ( threadedState, result ) =
             renderRecurse state dwg
     in
-    result
+    ( result, threadedGetHostAttributes threadedState )
 
 
 {-| Same as `renderRecurseDiscard`, but returns a default, empty SVG
 if no SVG was produced.
 -}
-renderRecurseDiscardWithDefault : State msg -> Drawing msg -> Svg msg
+renderRecurseDiscardWithDefault :
+    State msg
+    -> Drawing msg
+    -> ( Svg msg, List (Attribute msg) )
 renderRecurseDiscardWithDefault state dwg =
-    renderRecurseDiscard state dwg |> Maybe.withDefault emptySvg
+    let
+        ( maybeSvg, hostAttrs ) =
+            renderRecurseDiscard state dwg
+    in
+    ( Maybe.withDefault emptySvg maybeSvg, hostAttrs )
 
 
 {-| A notionally-empty SVG.
@@ -1235,25 +1344,16 @@ emptySvg =
     TypedSvg.g [ SvgAttributes.display DisplayNone ] []
 
 
-renderRecurseEmpty : State msg -> ( ThreadedState, Maybe (Svg msg) )
+renderRecurseEmpty : State msg -> ( ThreadedState msg, Maybe (Svg msg) )
 renderRecurseEmpty state =
     ( stateGetThreaded state, Nothing )
 
 
-renderRecursePath : State msg -> Path -> ( ThreadedState, Maybe (Svg msg) )
-renderRecursePath state pth =
-    if state |> stateGetNested >> nestedGetStyle >> styleHasDecorators then
-        renderRecurseDecoratedPath state pth
-
-    else
-        renderRecurseSimplePath state pth
-
-
-renderRecurseSimplePath :
+renderRecursePath :
     State msg
     -> Path
-    -> ( ThreadedState, Maybe (Svg msg) )
-renderRecurseSimplePath state pth =
+    -> ( ThreadedState msg, Maybe (Svg msg) )
+renderRecursePath state pth =
     let
         l2w =
             state |> stateGetNested >> nestedGetLocalToWorld
@@ -1285,23 +1385,13 @@ renderRecurseSimplePath state pth =
     ( stateGetThreaded state, outMaybeSvg )
 
 
-renderRecurseDecoratedPath :
-    State msg
-    -> Path
-    -> ( ThreadedState, Maybe (Svg msg) )
-renderRecurseDecoratedPath state _ =
-    -- TODO
-    ( stateGetThreaded state, Nothing )
-
-
 renderRecurseSvg :
     State msg
-    -> (Style msg -> AffineTransform -> Svg msg)
-    -> ( ThreadedState, Maybe (Svg msg) )
+    -> (AffineTransform -> Svg msg)
+    -> ( ThreadedState msg, Maybe (Svg msg) )
 renderRecurseSvg state svgFunction =
     ( stateGetThreaded state
     , svgFunction
-        (stateGetNested >> nestedGetStyle <| state)
         (stateGetNested >> nestedGetLocalToWorld <| state)
         |> Just
     )
@@ -1311,7 +1401,7 @@ renderRecurseStyled :
     State msg
     -> Style msg
     -> Drawing msg
-    -> ( ThreadedState, Maybe (Svg msg) )
+    -> ( ThreadedState msg, Maybe (Svg msg) )
 renderRecurseStyled state sty childDrawing =
     renderRecurse (stateCombineStyles sty state) childDrawing
 
@@ -1320,7 +1410,7 @@ renderRecurseTransformed :
     State msg
     -> AffineTransform
     -> Drawing msg
-    -> ( ThreadedState, Maybe (Svg msg) )
+    -> ( ThreadedState msg, Maybe (Svg msg) )
 renderRecurseTransformed state xf childDrawing =
     renderRecurse (stateComposeTransform xf state) childDrawing
 
@@ -1328,7 +1418,7 @@ renderRecurseTransformed state xf childDrawing =
 renderRecurseGroup :
     State msg
     -> List (Drawing msg)
-    -> ( ThreadedState, Maybe (Svg msg) )
+    -> ( ThreadedState msg, Maybe (Svg msg) )
 renderRecurseGroup state drawings =
     let
         renderRecurseGroupFold :
@@ -1365,15 +1455,34 @@ renderRecurseEvents :
     State msg
     -> Events msg
     -> Drawing msg
-    -> ( ThreadedState, Maybe (Svg msg) )
+    -> ( ThreadedState msg, Maybe (Svg msg) )
 renderRecurseEvents state events childDrawing =
     renderRecurse (stateCombineEvents events state) childDrawing
+
+
+renderRecurseHostEvents :
+    State msg
+    -> Events msg
+    -> Drawing msg
+    -> ( ThreadedState msg, Maybe (Svg msg) )
+renderRecurseHostEvents state events childDrawing =
+    let
+        hostAttrs =
+            eventsToAttributes
+                (state |> stateGetNested >> nestedGetLocalToWorld)
+                (state |> stateGetThreaded >> threadedGetCoordinateSystems)
+                events
+
+        newState =
+            state |> stateUpdateThreaded (threadedAddHostAttributes hostAttrs)
+    in
+    renderRecurse newState childDrawing
 
 
 renderRecurseTagCSys :
     State msg
     -> CSysName
-    -> ( ThreadedState, Maybe (Svg msg) )
+    -> ( ThreadedState msg, Maybe (Svg msg) )
 renderRecurseTagCSys state cSysName =
     ( stateGetThreaded state
         |> threadedInsertCoordinateSystem
@@ -1388,7 +1497,7 @@ renderRecursePrependAnchorNamespace :
     State msg
     -> AnchorNamespace
     -> Drawing msg
-    -> ( ThreadedState, Maybe (Svg msg) )
+    -> ( ThreadedState msg, Maybe (Svg msg) )
 renderRecursePrependAnchorNamespace state ns childDrawing =
     renderRecurse (statePrependAnchorNamespace ns state) childDrawing
 
@@ -1397,7 +1506,7 @@ renderRecurseDropAnchor :
     State msg
     -> AnchorName
     -> P2
-    -> ( ThreadedState, Maybe (Svg msg) )
+    -> ( ThreadedState msg, Maybe (Svg msg) )
 renderRecurseDropAnchor state name localPt =
     ( state
         |> stateGetThreaded
@@ -1416,7 +1525,7 @@ renderRecurseDropAnchor state name localPt =
 renderRecurseWeighAnchors :
     State msg
     -> ((String -> ( Float, Float )) -> Drawing msg)
-    -> ( ThreadedState, Maybe (Svg msg) )
+    -> ( ThreadedState msg, Maybe (Svg msg) )
 renderRecurseWeighAnchors state createFn =
     let
         anchorFn : String -> ( Float, Float )
@@ -1461,9 +1570,110 @@ styleToAttributes styl =
                 , toAttr styleGetStroke SvgAttributes.stroke
                 , toAttr styleGetStrokeWidth
                     (\x -> SvgAttributes.strokeWidth (px x))
+                , toAttr styleGetStrokeLinecap SvgAttributes.strokeLinecap
+                , toAttr styleGetStrokeLinejoin SvgAttributes.strokeLinejoin
                 ]
     in
     styleAttrs ++ List.reverse (styleGetAttributes styl)
+
+
+{-| Map a function over the message type of a drawing.
+-}
+map : (a -> msg) -> Drawing a -> Drawing msg
+map f drawing =
+    case drawing of
+        DrawingEmpty ->
+            DrawingEmpty
+
+        DrawingPath pth ->
+            DrawingPath pth
+
+        DrawingSvg mkSvg ->
+            DrawingSvg <|
+                \xform -> mkSvg xform |> TypedSvgCore.map f
+
+        DrawingStyled sty child ->
+            DrawingStyled (mapStyle f sty) (map f child)
+
+        DrawingTransformed xform child ->
+            DrawingTransformed xform (map f child)
+
+        DrawingGroup children ->
+            DrawingGroup <| List.map (map f) children
+
+        DrawingEvents events child ->
+            DrawingEvents (mapEvents f events) (map f child)
+
+        DrawingHostEvents events child ->
+            DrawingHostEvents (mapEvents f events) (map f child)
+
+        DrawingTagCSys name ->
+            DrawingTagCSys name
+
+        DrawingPrependAnchorNamespace ns child ->
+            DrawingPrependAnchorNamespace ns (map f child)
+
+        DrawingDropAnchor name location ->
+            DrawingDropAnchor name location
+
+        DrawingWeighAnchors fn ->
+            DrawingWeighAnchors <| \extractFn -> fn extractFn |> map f
+
+
+mapStyle : (a -> msg) -> Style a -> Style msg
+mapStyle f (Style sty) =
+    Style
+        { fill = sty.fill
+        , stroke = sty.stroke
+        , strokeWidth = sty.strokeWidth
+        , strokeLinecap = sty.strokeLinecap
+        , strokeLinejoin = sty.strokeLinejoin
+        , extraAttributes = List.map (mapAttribute f) sty.extraAttributes
+        }
+
+
+mapEvents : (a -> msg) -> Events a -> Events msg
+mapEvents f (Events listeners) =
+    Events <| List.map (mapEventListener f) listeners
+
+
+mapEventListener : (a -> msg) -> EventListener a -> EventListener msg
+mapEventListener f listener =
+    case listener of
+        MouseClick h ->
+            MouseClick <| mapMouseHandler f h
+
+        MouseContextMenu h ->
+            MouseContextMenu <| mapMouseHandler f h
+
+        MouseDblClick h ->
+            MouseDblClick <| mapMouseHandler f h
+
+        MouseDown h ->
+            MouseDown <| mapMouseHandler f h
+
+        MouseEnter h ->
+            MouseEnter <| mapMouseHandler f h
+
+        MouseLeave h ->
+            MouseLeave <| mapMouseHandler f h
+
+        MouseMove h ->
+            MouseMove <| mapMouseHandler f h
+
+        MouseOut h ->
+            MouseOut <| mapMouseHandler f h
+
+        MouseOver h ->
+            MouseOver <| mapMouseHandler f h
+
+        MouseUp h ->
+            MouseUp <| mapMouseHandler f h
+
+
+mapMouseHandler : (a -> msg) -> MouseHandler a -> MouseHandler msg
+mapMouseHandler f (MouseHandler fn) =
+    MouseHandler (fn >> f)
 
 
 
