@@ -31,12 +31,12 @@ elm-doc-preview
 
 ## TODO
 
-- Better fuzzer for paths - don't create primitives which start and end at the
-  same point.
-
-## Ideas
-
-- Tagged coordinate systems. Maybe you want coordinates in some arbitrary system
-  defined in the document, not just path-local or world?
-- Tagged anchor points. You could specify a named anchor somewhere in the document,
-  and then fetch its coordinates to use for layout.
+- Capture L2W transformation when events are declared, not when they are
+  attached to objects.
+- Text.
+- "Bake" node.
+- Refactor to separate out styles and events stuff from the huge main file.
+- Use a non-recursive traversal of the graph.
+- Need a way to draw items in world coordinates.
+- Arrow heads.
+- More examples.

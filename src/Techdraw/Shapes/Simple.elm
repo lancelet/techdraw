@@ -11,7 +11,15 @@ module Techdraw.Shapes.Simple exposing
 -}
 
 import Techdraw.Math exposing (Path(..))
-import Techdraw.PathBuilder exposing (arcTo, close, createPath, empty, lineTo, moveTo)
+import Techdraw.PathBuilder
+    exposing
+        ( arcTo
+        , close
+        , createPath
+        , empty
+        , lineTo
+        , moveTo
+        )
 
 
 {-| A rectangle path.
