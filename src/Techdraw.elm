@@ -100,7 +100,18 @@ import Techdraw.Math as Math exposing (AffineTransform(..), P2, Path(..))
 import TypedSvg
 import TypedSvg.Attributes as SvgAttributes
 import TypedSvg.Core as TypedSvgCore exposing (Svg)
-import TypedSvg.Types exposing (Display(..), Paint, StrokeLinecap, StrokeLinejoin, px)
+import TypedSvg.Types
+    exposing
+        ( Align(..)
+        , Display(..)
+        , MeetOrSlice(..)
+        , Paint
+        , Scale(..)
+        , StrokeLinecap
+        , StrokeLinejoin
+        , pc
+        , px
+        )
 import VirtualDom exposing (Attribute, mapAttribute)
 
 
@@ -713,7 +724,7 @@ The fields of this record are as follows:
 
 -}
 type alias MouseInfo =
-    { clientPoint : P2
+    { offsetPoint : P2
     , localPoint : P2
     , buttons : MouseButtons
     , modifiers : ModifierKeys
@@ -856,31 +867,31 @@ mouseInfo localToWorld cSysDict =
     in
     Decode.map3
         (\clientPoint btns mods ->
-            { clientPoint = clientPoint
+            { offsetPoint = clientPoint
             , localPoint = calcLocalPoint clientPoint
             , buttons = btns
             , modifiers = mods
             , pointIn = \name -> calcPointIn name clientPoint
             }
         )
-        clientP2
+        offsetP2
         mouseButtons
         modifiers
 
 
-clientP2 : Decoder P2
-clientP2 =
-    Decode.map2 Math.p2 clientXFloat clientYFloat
+offsetP2 : Decoder P2
+offsetP2 =
+    Decode.map2 Math.p2 offsetXFloat offsetYFloat
 
 
-clientXFloat : Decoder Float
-clientXFloat =
-    Decode.map toFloat clientX
+offsetXFloat : Decoder Float
+offsetXFloat =
+    Decode.map toFloat offsetX
 
 
-clientYFloat : Decoder Float
-clientYFloat =
-    Decode.map toFloat clientY
+offsetYFloat : Decoder Float
+offsetYFloat =
+    Decode.map toFloat offsetY
 
 
 mouseButtons : Decoder MouseButtons
@@ -936,14 +947,14 @@ modifiers =
         metaKey
 
 
-clientX : Decoder Int
-clientX =
-    Decode.field "clientX" Decode.int
+offsetX : Decoder Int
+offsetX =
+    Decode.field "offsetX" Decode.int
 
 
-clientY : Decoder Int
-clientY =
-    Decode.field "clientY" Decode.int
+offsetY : Decoder Int
+offsetY =
+    Decode.field "offsetY" Decode.int
 
 
 buttons : Decoder Int
@@ -1011,6 +1022,7 @@ render viewBox drawing =
             viewBox.minY
             viewBox.width
             viewBox.height
+         , SvgAttributes.preserveAspectRatio (Align ScaleMid ScaleMid) Meet
          ]
             ++ hostAttrs
         )
