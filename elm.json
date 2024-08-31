@@ -11,6 +11,7 @@
     "Techdraw.PathBuilder",
     "Techdraw.Shapes.Simple",
     "Techdraw.Shapes.Spring",
+    "Techdraw.Style",
     "Techdraw.Svg.SvgStringPath",
     "Techdraw.Widgets.DragPt"
   ],
