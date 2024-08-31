@@ -7,6 +7,7 @@ module Techdraw.Shapes.Spring exposing (spring)
 -}
 
 import Techdraw.Math as M
+import Techdraw.Path as P
 import Techdraw.PathBuilder as PB
 
 
@@ -26,7 +27,7 @@ spring :
     , minCoilAngleDeg : Float
     , maxCoilAngleDeg : Float
     }
-    -> M.Path
+    -> P.Path
 spring r =
     let
         dv =
@@ -34,15 +35,15 @@ spring r =
 
         xform =
             M.affFromComponents
-                [ M.ComponentRotation <|
+                [ M.AffineRotation <|
                     M.Rotation <|
                         M.angle2Pi <|
-                            atan2 (M.v2y dv) (M.v2x dv)
-                , M.ComponentTranslation <|
-                    M.Translation (M.p2x r.start) (M.p2y r.start)
+                            atan2 (M.v2e2 dv) (M.v2e1 dv)
+                , M.AffineTranslation <|
+                    M.Translation (M.p2v r.start)
                 ]
     in
-    M.affApplyPath xform <|
+    P.pathApplyAffineTransform xform <|
         springAtOriginAlongX
             { curLength = M.v2Mag dv
             , restLength = r.restLength
@@ -65,7 +66,7 @@ springAtOriginAlongX :
     , minCoilAngleDeg : Float
     , maxCoilAngleDeg : Float
     }
-    -> M.Path
+    -> P.Path
 springAtOriginAlongX r =
     let
         restEndLength =
@@ -142,7 +143,7 @@ resolvedSpringAlongX :
     , coilHyp : Float
     , coilCount : Int
     }
-    -> M.Path
+    -> P.Path
 resolvedSpringAlongX r =
     let
         coilWidth =

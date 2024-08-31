@@ -96,7 +96,9 @@ import Dict exposing (Dict)
 import Html exposing (Html)
 import Html.Events as HtmlEvents
 import Json.Decode as Decode exposing (Decoder)
-import Techdraw.Math as Math exposing (AffineTransform(..), P2, Path(..))
+import Techdraw.Math as Math exposing (AffineTransform(..), P2)
+import Techdraw.Path as P exposing (Path(..))
+import Techdraw.Svg.SvgStringPath as SP
 import TypedSvg
 import TypedSvg.Attributes as SvgAttributes
 import TypedSvg.Core as TypedSvgCore exposing (Svg)
@@ -109,7 +111,6 @@ import TypedSvg.Types
         , Scale(..)
         , StrokeLinecap
         , StrokeLinejoin
-        , pc
         , px
         )
 import VirtualDom exposing (Attribute, mapAttribute)
@@ -168,7 +169,7 @@ transform parentTransform drawing =
     case drawing of
         DrawingTransformed childTransform childDrawing ->
             DrawingTransformed
-                (Math.affMul parentTransform childTransform)
+                (Math.affMatMul parentTransform childTransform)
                 childDrawing
 
         _ ->
@@ -179,14 +180,14 @@ transform parentTransform drawing =
 -}
 translate : ( Float, Float ) -> Drawing msg -> Drawing msg
 translate ( tx, ty ) =
-    transform <| Math.affTranslate <| Math.Translation tx ty
+    transform <| Math.affTranslation <| Math.Translation (Math.v2 tx ty)
 
 
 {-| Scale a drawing.
 -}
 scale : ( Float, Float ) -> Drawing msg -> Drawing msg
 scale ( sx, sy ) =
-    transform <| Math.affScale <| Math.Scale sx sy
+    transform <| Math.affScaling <| Math.Scaling sx sy
 
 
 {-| Rotate clockwise by a value in degrees about a point.
@@ -196,11 +197,11 @@ rotateAbout angle ( xc, yc ) =
     let
         xform =
             Math.affFromComponents
-                [ Math.ComponentTranslation <| Math.Translation -xc -yc
-                , Math.ComponentRotation <|
+                [ Math.AffineTranslation <| Math.Translation (Math.v2 -xc -yc)
+                , Math.AffineRotation <|
                     Math.Rotation <|
                         Math.angle2Pi (angle * pi / 180)
-                , Math.ComponentTranslation <| Math.Translation xc yc
+                , Math.AffineTranslation <| Math.Translation (Math.v2 xc yc)
                 ]
     in
     transform xform
@@ -212,7 +213,7 @@ skewX : Float -> Drawing msg -> Drawing msg
 skewX angle =
     let
         xform =
-            Math.affShearX <| Math.ShearX <| tan <| angle * pi / 180
+            Math.affShearingX <| Math.ShearingX <| tan <| angle * pi / 180
     in
     transform xform
 
@@ -856,14 +857,14 @@ mouseInfo localToWorld cSysDict =
         calcLocalPoint : P2 -> P2
         calcLocalPoint clientPoint =
             Math.affInvert localToWorld
-                |> (\mat -> Math.affApplyP2 mat clientPoint)
+                |> (\mat -> Math.p2ApplyAffineTransform mat clientPoint)
 
         calcPointIn : CSysName -> P2 -> P2
         calcPointIn name clientPoint =
             getCSys name cSysDict
                 |> Maybe.withDefault localToWorld
                 |> Math.affInvert
-                |> (\mat -> Math.affApplyP2 mat clientPoint)
+                |> (\mat -> Math.p2ApplyAffineTransform mat clientPoint)
     in
     Decode.map3
         (\clientPoint btns mods ->
@@ -1118,7 +1119,7 @@ nestedSetLocalToWorld l2w (NestedState parent) =
 nestedComposeTransform : AffineTransform -> NestedState msg -> NestedState msg
 nestedComposeTransform childTransform (NestedState parent) =
     nestedSetLocalToWorld
-        (Math.affMul parent.localToWorld childTransform)
+        (Math.affMatMul parent.localToWorld childTransform)
         (NestedState parent)
 
 
@@ -1213,9 +1214,9 @@ initState viewBox =
 initLocalToWorld : ViewBox -> AffineTransform
 initLocalToWorld vb =
     Math.affFromComponents
-        [ Math.ComponentScale <| Math.Scale 1 -1
-        , Math.ComponentTranslation <| Math.Translation 0 vb.height
-        , Math.ComponentTranslation <| Math.Translation vb.minX vb.minY
+        [ Math.AffineScaling <| Math.Scaling 1 -1
+        , Math.AffineTranslation <| Math.Translation (Math.v2 0 vb.height)
+        , Math.AffineTranslation <| Math.Translation (Math.v2 vb.minX vb.minY)
         ]
 
 
@@ -1383,16 +1384,19 @@ renderRecursePath state pth =
                 >> eventsToAttributes l2w csys
 
         pathAttr =
-            pth |> Math.affApplyPath l2w >> Math.toSvgPPath >> SvgAttributes.d
+            pth
+                |> P.pathApplyAffineTransform l2w
+                >> SP.formatPath (SP.NFixDigits 2)
+                >> SP.svgStringPathToString
+                >> SvgAttributes.d
 
         outMaybeSvg =
-            case pth of
-                EmptyPath ->
-                    Nothing
+            if P.pathIsEmpty pth then
+                Nothing
 
-                Path _ ->
-                    Just <|
-                        TypedSvg.path (pathAttr :: styleAttr ++ eventAttr) []
+            else
+                Just <|
+                    TypedSvg.path (pathAttr :: styleAttr ++ eventAttr) []
     in
     ( stateGetThreaded state, outMaybeSvg )
 
@@ -1526,7 +1530,7 @@ renderRecurseDropAnchor state name localPt =
             ( anchorNamePrependAll
                 (state |> stateGetNested >> nestedGetAnchorNamespaces)
                 name
-            , Math.affApplyP2
+            , Math.p2ApplyAffineTransform
                 (state |> stateGetNested >> nestedGetLocalToWorld)
                 localPt
             )
@@ -1547,7 +1551,7 @@ renderRecurseWeighAnchors state createFn =
                 >> threadedGetDroppedAnchors
                 >> getAnchorWorldLocation (anchorName aname)
                 >> Maybe.map
-                    (Math.affApplyP2
+                    (Math.p2ApplyAffineTransform
                         (state
                             |> stateGetNested
                             >> nestedGetLocalToWorld
