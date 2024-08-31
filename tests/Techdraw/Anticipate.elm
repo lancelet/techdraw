@@ -112,6 +112,16 @@ equal x y =
         fail <| Debug.toString x ++ " == " ++ Debug.toString y
 
 
+true : Bool -> Anticipate
+true =
+    equal True
+
+
+false : Bool -> Anticipate
+false =
+    equal False
+
+
 atLeast : comparable -> comparable -> Anticipate
 atLeast boundary value =
     if value >= boundary then

@@ -5,7 +5,7 @@ module Techdraw.PathBuilder exposing
     , moveTo, lineTo, qBezierTo, cBezierTo, arcTo, close
     )
 
-{-|
+{-| Building paths using procedural syntax.
 
 
 # Types
@@ -22,20 +22,18 @@ module Techdraw.PathBuilder exposing
 -}
 
 import List.Nonempty as Nonempty
-import Techdraw.Math
+import Techdraw.Math exposing (P2, orientationPi, p2)
+import Techdraw.Path
     exposing
         ( ArcTo(..)
         , CBezierTo(..)
+        , Completion(..)
         , LineTo(..)
-        , MoveTo(..)
-        , P2
         , Path(..)
-        , PathCommand(..)
         , QBezierTo(..)
+        , Segment(..)
+        , Start(..)
         , SubPath(..)
-        , SubPathClosure(..)
-        , orientationPi
-        , p2
         )
 
 
@@ -65,13 +63,13 @@ empty =
 some operation.
 
 Basically, what's happening here is that the SubPathBuilder is either
-continuing (ready for more commands), or it's completed. If it has completed,
+continuing (ready for more segments), or it's completed. If it has completed,
 the PathBuilder needs a new SubPathBuilder, and to process any pending
-commands on it.
+segments on it.
 
-Pending commands are necessary because a SubPath can be closed by a `moveTo`
+Pending segments are necessary because a SubPath can be closed by a `moveTo`
 operation, which leaves the last SubPathBuilder hanging with a move that
-has to go on the front of the next SubPathBuilder.
+has to go as the start of the next SubPathBuilder.
 
 -}
 processSubPathResult : SubPathResult -> PathBuilder -> PathBuilder
@@ -97,17 +95,17 @@ createPath : PathBuilder -> Path
 createPath (PathBuilder pathBuilder) =
     let
         final_backward_subpaths =
-            if subPathHasCommands pathBuilder.subPathBuilder then
-                -- Here, we're emptying out any remaining commands in the
+            if subPathHasSegments pathBuilder.subPathBuilder then
+                -- Here, we're emptying out any remaining segments in the
                 -- subpath builder.
-                subPathBuilderToSubPath pathBuilder.subPathBuilder :: pathBuilder.subPaths
+                subPathBuilderToSubPath pathBuilder.subPathBuilder
+                    :: pathBuilder.subPaths
 
             else
                 pathBuilder.subPaths
     in
-    Nonempty.fromList (List.reverse final_backward_subpaths)
-        |> Maybe.map Path
-        |> Maybe.withDefault EmptyPath
+    List.reverse final_backward_subpaths
+        |> Path
 
 
 {-| Execute a subpath program.
@@ -133,21 +131,32 @@ moveTo ( x, y ) =
 -}
 lineTo : ( Float, Float ) -> PathBuilder -> PathBuilder
 lineTo ( x, y ) =
-    execSubPath <| subPathPush <| CmdLineTo <| LineTo <| p2 x y
+    execSubPath <| subPathPush <| SegLineTo <| LineTo <| p2 x y
 
 
 {-| Draw a quadratic Bezier curve.
 -}
 qBezierTo : ( Float, Float ) -> ( Float, Float ) -> PathBuilder -> PathBuilder
 qBezierTo ( ax, ay ) ( bx, by ) =
-    execSubPath <| subPathPush <| CmdQBezierTo <| QBezierTo (p2 ax ay) (p2 bx by)
+    execSubPath <|
+        subPathPush <|
+            SegQBezierTo <|
+                QBezierTo (p2 ax ay) (p2 bx by)
 
 
 {-| Draw a cubic Bezier curve.
 -}
-cBezierTo : ( Float, Float ) -> ( Float, Float ) -> ( Float, Float ) -> PathBuilder -> PathBuilder
+cBezierTo :
+    ( Float, Float )
+    -> ( Float, Float )
+    -> ( Float, Float )
+    -> PathBuilder
+    -> PathBuilder
 cBezierTo ( ax, ay ) ( bx, by ) ( cx, cy ) =
-    execSubPath <| subPathPush <| CmdCBezierTo <| CBezierTo (p2 ax ay) (p2 bx by) (p2 cx cy)
+    execSubPath <|
+        subPathPush <|
+            SegCBezierTo <|
+                CBezierTo (p2 ax ay) (p2 bx by) (p2 cx cy)
 
 
 {-| Draw an arc.
@@ -165,12 +174,16 @@ arcTo :
 arcTo params ( endx, endy ) =
     let
         cmd =
-            CmdArcTo <|
+            SegArcTo <|
                 ArcTo
                     { end = p2 endx endy
                     , rx = params.rx
                     , ry = params.ry
-                    , xOrient = orientationPi <| params.xAxisAngleDegrees * pi / 180
+                    , xOrient =
+                        orientationPi <|
+                            params.xAxisAngleDegrees
+                                * pi
+                                / 180
                     , large = params.large
                     , sweep = params.sweep
                     }
@@ -194,21 +207,21 @@ close =
 type SubPathBuilder
     = SubPathBuilder
         { -- Closure status of the subpath (open or closed).
-          closure : SubPathClosure
+          closure : Completion
 
         -- Start of the subpath, which we may or may not know.
         , start : Maybe P2
 
-        -- List of path commands inside the SubPath.
-        , commands : List PathCommand
+        -- List of path segments inside the SubPath.
+        , segments : List Segment
         }
 
 
-{-| Check if the SubPathBuilder contains any path commands.
+{-| Check if the SubPathBuilder contains any path segments.
 -}
-subPathHasCommands : SubPathBuilder -> Bool
-subPathHasCommands (SubPathBuilder builder) =
-    not <| List.isEmpty builder.commands
+subPathHasSegments : SubPathBuilder -> Bool
+subPathHasSegments (SubPathBuilder builder) =
+    not <| List.isEmpty builder.segments
 
 
 {-| Convert the SubPathBuilder to a SubPath.
@@ -218,16 +231,16 @@ subPathBuilderToSubPath (SubPathBuilder builder) =
     let
         -- This exists to unpack a Maybe value that we know is always a Just
         dummy_subpath =
-            SubPath SubPathOpen (MoveTo <| p2 0 0) <|
+            SubPath Open (Start <| p2 0 0) <|
                 Nonempty.singleton <|
-                    CmdLineTo <|
+                    SegLineTo <|
                         LineTo <|
                             p2 100 100
 
         spMoveTo =
-            MoveTo <| Maybe.withDefault (p2 0 0) builder.start
+            Start <| Maybe.withDefault (p2 0 0) builder.start
     in
-    builder.commands
+    builder.segments
         |> List.reverse
         |> Nonempty.fromList
         |> Maybe.map (SubPath builder.closure spMoveTo)
@@ -243,9 +256,8 @@ type SubPathResult
 
   - `NothingPending`: everything is finished because the SubPath was
     completed using `subPathClosed`
-  - `PendingMoveTo`: a new `MoveTo` command should be added to the start
-    of the next SubPathBuilder because the SubPath was completed using
-    a `MoveTo`.
+  - `PendingMoveTo`: a new `Start` should be added to the start of the next
+    SubPathBuilder because the SubPath was completed using a `MoveTo`.
 
 -}
 type Pending
@@ -266,15 +278,15 @@ pendingToStartPt pending =
 newSubPathBuilder : Pending -> SubPathBuilder
 newSubPathBuilder pending =
     SubPathBuilder
-        { closure = SubPathOpen
+        { closure = Open
         , start = pendingToStartPt <| pending
-        , commands = []
+        , segments = []
         }
 
 
 subPathMoveTo : P2 -> SubPathBuilder -> SubPathResult
 subPathMoveTo pt (SubPathBuilder builder) =
-    if List.isEmpty builder.commands then
+    if List.isEmpty builder.segments then
         -- Here the subpath hasn't started yet, so we can move it wherever
         -- it needs to go.
         SubPathContinuing <|
@@ -290,7 +302,7 @@ subPathMoveTo pt (SubPathBuilder builder) =
 
 subPathClose : SubPathBuilder -> SubPathResult
 subPathClose (SubPathBuilder builder) =
-    if List.isEmpty builder.commands then
+    if List.isEmpty builder.segments then
         -- Here we closed a builder with nothing in it; re-use the builder.
         SubPathContinuing (SubPathBuilder builder)
 
@@ -298,14 +310,14 @@ subPathClose (SubPathBuilder builder) =
         -- Closing a path that has stuff in it.
         SubPathComplete NothingPending <|
             subPathBuilderToSubPath <|
-                SubPathBuilder { builder | closure = SubPathClosed }
+                SubPathBuilder { builder | closure = Closed }
 
 
-subPathPush : PathCommand -> SubPathBuilder -> SubPathResult
-subPathPush command (SubPathBuilder builder) =
+subPathPush : Segment -> SubPathBuilder -> SubPathResult
+subPathPush segment (SubPathBuilder builder) =
     SubPathContinuing <|
         SubPathBuilder
             { builder
                 | start = Just <| Maybe.withDefault (p2 0 0) builder.start
-                , commands = command :: builder.commands
+                , segments = segment :: builder.segments
             }

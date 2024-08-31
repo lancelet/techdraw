@@ -329,7 +329,7 @@ update msg (Model model) =
             let
                 -- Stop large jumps when the window loses focus.
                 clampedDt =
-                    M.clamp ( 0, 100 ) dt
+                    clamp 0 100 dt
             in
             Model
                 { model

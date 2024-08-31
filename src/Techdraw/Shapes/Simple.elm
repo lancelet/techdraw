@@ -10,7 +10,7 @@ module Techdraw.Shapes.Simple exposing
 
 -}
 
-import Techdraw.Math exposing (Path(..))
+import Techdraw.Path exposing (Path(..))
 import Techdraw.PathBuilder
     exposing
         ( arcTo
@@ -33,7 +33,7 @@ rect :
     -> Path
 rect r =
     if r.width <= 0 || r.height <= 0 then
-        EmptyPath
+        Path []
 
     else
         let
@@ -71,7 +71,7 @@ rectRounded :
     -> Path
 rectRounded r =
     if r.width <= 0 || r.height <= 0 then
-        EmptyPath
+        Path []
 
     else
         let
@@ -137,7 +137,7 @@ circle :
     -> Path
 circle r =
     if r.r <= 0 then
-        EmptyPath
+        Path []
 
     else
         let
@@ -170,7 +170,7 @@ ellipse :
     -> Path
 ellipse r =
     if r.rx <= 0 || r.ry <= 0 then
-        EmptyPath
+        Path []
 
     else
         let
