@@ -188,6 +188,15 @@ type Paint
 
 
 {-| Parameters of a linear gradient.
+
+A linear gradient is specified by:
+
+  - `start`: a start point.
+  - `end`: an end point.
+  - `transform`: additional gradient transform, which maps from the gradient
+    coordinate system to the local coordinate system.
+  - `gradient`: the list of gradient stops.
+
 -}
 type alias LinearGradientParams =
     { start : P2
@@ -199,13 +208,8 @@ type alias LinearGradientParams =
 
 {-| Linear gradient.
 
-A linear gradient is specified by:
-
-  - `start`: a start point.
-  - `end`: an end point.
-  - `transform`: additional gradient transform, which maps from the gradient
-    coordinate system to the local coordinate system.
-  - `gradient`: the list of gradient stops.
+Internally, this contains the parameters of the linear gradient along with
+a unique hash.
 
 -}
 type LinearGradient
@@ -230,6 +234,18 @@ linearGradient record =
 
 
 {-| Parameters of a radial gradient.
+
+A radial gradient is drawn between an "inner circle" and an "outer circle".
+It is specified by:
+
+  - `innerCenter`: center of the inner circle.
+  - `innerRadius`: radius of the inner circle.
+  - `outerCenter`: center of the outer circle.
+  - `outerRadius`: radius of the outer circle.
+  - `transform`: additional gradient transform, which maps from the gradient
+    coordinate system to the local coordinate system.
+  - `gradient`: the list of gradient stops.
+
 -}
 type alias RadialGradientParams =
     { innerCenter : P2
@@ -243,16 +259,8 @@ type alias RadialGradientParams =
 
 {-| Radial gradient.
 
-A radial gradient is drawn between an "inner circle" and an "outer circle".
-It is specified by:
-
-  - `innerCenter`: center of the inner circle.
-  - `innerRadius`: radius of the inner circle.
-  - `outerCenter`: center of the outer circle.
-  - `outerRadius`: radius of the outer circle.
-  - `transform`: additional gradient transform, which maps from the gradient
-    coordinate system to the local coordinate system.
-  - `gradient`: the list of gradient stops.
+Internally, this contains the parameters of the radial gradient along with a
+unique hash.
 
 -}
 type RadialGradient
@@ -351,7 +359,7 @@ The hash should be the same if `Stop`s are re-ordered; eg:
 
 But will be different if the `Stop`s are different:
 
-    impoct Color
+    import Color
 
     gradientHexHash <|
         gradient

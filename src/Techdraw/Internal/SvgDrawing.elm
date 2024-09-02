@@ -91,22 +91,36 @@ viewBoxAttribute (ViewBox vb) =
 -}
 toSvg : Sizes -> IDrawing msg -> Html msg
 toSvg sizes iDrawing =
+    let
+        (SvgResult result) =
+            componentsToSvg sizes iDrawing
+    in
+    -- TODO : Handle defs and container events
     Svg.svg
         (sizesAttributes sizes)
-        (componentsToSvg sizes iDrawing)
+        result.children
 
 
 
 ---- State Machine for SVG Evaluation -----------------------------------------
 
 
+{-| Result of conversion to SVG.
+-}
+type SvgResult msg
+    = SvgResult
+        { children : List (Svg msg)
+        , defs : Defs
+        }
+
+
 {-| Convert drawing components to a list of SVG components.
 -}
-componentsToSvg : Sizes -> IDrawing msg -> List (Svg msg)
+componentsToSvg : Sizes -> IDrawing msg -> SvgResult msg
 componentsToSvg sizes iDrawing =
     let
         -- Loop should be tail-recursive
-        loop : State msg -> List (Svg msg)
+        loop : State msg -> SvgResult msg
         loop state =
             case finished state of
                 Just svgs ->
@@ -202,11 +216,19 @@ type State msg
 {-| If the state machine has finished computing, return its list of
 Svg components.
 -}
-finished : State msg -> Maybe (List (Svg msg))
+finished : State msg -> Maybe (SvgResult msg)
 finished (State state) =
     case ( state.expr, state.kont ) of
         ( Final svgs, [] ) ->
-            Just svgs
+            Just <|
+                let
+                    (Envr envr) =
+                        state.envr
+                in
+                SvgResult
+                    { children = svgs
+                    , defs = envr.defs
+                    }
 
         _ ->
             Nothing
