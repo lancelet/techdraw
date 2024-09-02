@@ -96,9 +96,9 @@ import Dict exposing (Dict)
 import Html exposing (Html)
 import Html.Events as HtmlEvents
 import Json.Decode as Decode exposing (Decoder)
+import Techdraw.Internal.SvgStringPath as SP
 import Techdraw.Math as Math exposing (AffineTransform(..), P2)
 import Techdraw.Path as P exposing (Path(..))
-import Techdraw.Svg.SvgStringPath as SP
 import TypedSvg
 import TypedSvg.Attributes as SvgAttributes
 import TypedSvg.Core as TypedSvgCore exposing (Svg)

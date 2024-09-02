@@ -31,13 +31,17 @@ module Techdraw.Math exposing
     , p2ApplyAffineTransform
     , closeP2
     , AffineTransform
-    , affineTransform
+    , affineTransform, affineTransformMV
     , affIdentity, affRotation, affScaling, affShearingX, affTranslation
     , affFromComponent, affFromComponents
     , affGetLinear, affGetTranslation
     , affMatMul
     , affInvert
     , closeAffineTransform
+    , encP2, decP2
+    , encV2, decV2
+    , encM22, decM22
+    , encAffineTransform, decAffineTransform
     )
 
 {-| Mathematical core for Techdraw.
@@ -271,7 +275,7 @@ that applies an affine transformation to a point.
 
 ## Creation
 
-@docs affineTransform
+@docs affineTransform, affineTransformMV
 @docs affIdentity, affRotation, affScaling, affShearingX, affTranslation
 @docs affFromComponent, affFromComponents
 
@@ -295,7 +299,24 @@ that applies an affine transformation to a point.
 
 @docs closeAffineTransform
 
+
+# Codecs
+
+We can read and write binary forms of some types, which is useful for
+hashing:
+
+@docs encP2, decP2
+@docs encV2, decV2
+@docs encM22, decM22
+@docs encAffineTransform, decAffineTransform
+
 -}
+
+import Bytes.Decode as Decode exposing (Decoder)
+import Bytes.Encode as Encode exposing (Encoder)
+import Techdraw.Internal.Codec as Codec
+
+
 
 ---- Floating-point functions -------------------------------------------------
 
@@ -1060,6 +1081,14 @@ affineTransform e11 e12 e21 e22 tx ty =
     AffineTransform { linear = m22 e11 e12 e21 e22, translation = v2 tx ty }
 
 
+{-| Create an affine transformation from its linear matrix and translation
+vector.
+-}
+affineTransformMV : M22 -> V2 -> AffineTransform
+affineTransformMV m v =
+    AffineTransform { linear = m, translation = v }
+
+
 {-| Return the linear component of an affine transform.
 -}
 affGetLinear : AffineTransform -> M22
@@ -1189,3 +1218,77 @@ element-wise.
 closeAffineTransform : Tol -> AffineTransform -> AffineTransform -> Bool
 closeAffineTransform tol (AffineTransform a) (AffineTransform b) =
     closeM22 tol a.linear b.linear && closeV2 tol a.translation b.translation
+
+
+
+---- Codecs -------------------------------------------------------------------
+
+
+{-| Encode a `P2` point.
+-}
+encP2 : P2 -> Encoder
+encP2 p =
+    Encode.sequence
+        [ p2x p |> Codec.encf32
+        , p2y p |> Codec.encf32
+        ]
+
+
+{-| Decode a `P2` point.
+-}
+decP2 : Decoder P2
+decP2 =
+    Decode.map2 p2 Codec.decf32 Codec.decf32
+
+
+{-| Encode a `V2` vector.
+-}
+encV2 : V2 -> Encoder
+encV2 v =
+    Encode.sequence
+        [ v2e1 v |> Codec.encf32
+        , v2e2 v |> Codec.encf32
+        ]
+
+
+{-| Decode a `V2` vector.
+-}
+decV2 : Decoder V2
+decV2 =
+    Decode.map2 v2 Codec.decf32 Codec.decf32
+
+
+{-| Encode an `M22` matrix.
+-}
+encM22 : M22 -> Encoder
+encM22 m =
+    Encode.sequence
+        [ m22e11 m |> Codec.encf32
+        , m22e12 m |> Codec.encf32
+        , m22e21 m |> Codec.encf32
+        , m22e22 m |> Codec.encf32
+        ]
+
+
+{-| Decode an `M22` matrix.
+-}
+decM22 : Decoder M22
+decM22 =
+    Decode.map4 m22 Codec.decf32 Codec.decf32 Codec.decf32 Codec.decf32
+
+
+{-| Encode an affine transform.
+-}
+encAffineTransform : AffineTransform -> Encoder
+encAffineTransform aff =
+    Encode.sequence
+        [ affGetLinear aff |> encM22
+        , affGetTranslation aff |> encV2
+        ]
+
+
+{-| Decode an affine transform.
+-}
+decAffineTransform : Decoder AffineTransform
+decAffineTransform =
+    Decode.map2 affineTransformMV decM22 decV2

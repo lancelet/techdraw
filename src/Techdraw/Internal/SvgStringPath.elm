@@ -1,4 +1,4 @@
-module Techdraw.Svg.SvgStringPath exposing
+module Techdraw.Internal.SvgStringPath exposing
     ( SvgStringPath
     , svgStringPath, svgStringPathToString
     , formatPath

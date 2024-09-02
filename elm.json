@@ -6,26 +6,34 @@
   "version": "1.0.0",
   "exposed-modules": [
     "Techdraw",
+    "TechdrawNew",
+    "Techdraw.Event",
+    "Techdraw.Internal.Codec",
+    "Techdraw.Internal.Drawing",
+    "Techdraw.Internal.SvgDrawing",
+    "Techdraw.Internal.SvgStringPath",
+    "Techdraw.Internal.SvgStyle",
     "Techdraw.Math",
     "Techdraw.Path",
     "Techdraw.PathBuilder",
     "Techdraw.Shapes.Simple",
     "Techdraw.Shapes.Spring",
     "Techdraw.Style",
-    "Techdraw.Svg.SvgStringPath",
     "Techdraw.Widgets.DragPt"
   ],
   "source-directories": ["src"],
   "elm-version": "0.19.1 <= v < 0.20.0",
   "dependencies": {
     "avh4/elm-color": "1.0.0 <= v < 2.0.0",
+    "elm/bytes": "1.0.0 <= v < 2.0.0",
     "elm/core": "1.0.0 <= v < 2.0.0",
     "elm/html": "1.0.0 <= v < 2.0.0",
     "elm/json": "1.1.3 <= v < 2.0.0",
     "elm/virtual-dom": "1.0.3 <= v < 2.0.0",
     "elm-community/easing-functions": "2.0.0 <= v <= 3.0.0",
     "elm-community/typed-svg": "7.0.0 <= v < 8.0.0",
-    "mgold/elm-nonempty-list": "4.2.0 <= v < 5.0.0"
+    "mgold/elm-nonempty-list": "4.2.0 <= v < 5.0.0",
+    "TSFoster/elm-sha1": "2.0.0 <= v <= 3.0.0"
   },
   "test-dependencies": {
     "elm-explorations/test": "2.2.0 <= v < 3.0.0"
