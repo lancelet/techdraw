@@ -1,15 +1,10 @@
 module Techdraw.Internal.Svg.Path exposing
-    ( PathString
-    , svgStringPath, svgStringPathToString
-    , formatPath
+    ( formatPath
     , NFixDigits(..)
     , toFixed
     )
 
 {-| String representation of SVG paths.
-
-@docs PathString
-@docs svgStringPath, svgStringPathToString
 
 
 # Formatting a Path
@@ -51,21 +46,10 @@ type PathString
     | PathStringEmpty
 
 
-{-| Create an `SvgStringPath` from a `String`.
--}
-svgStringPath : String -> PathString
-svgStringPath content =
-    if String.isEmpty content then
-        PathStringEmpty
-
-    else
-        PathString content
-
-
 {-| Convert an `SvgStringPath` to a `String`.
 -}
-svgStringPathToString : PathString -> String
-svgStringPathToString ssp =
+pathStringToString : PathString -> String
+pathStringToString ssp =
     case ssp of
         PathString content ->
             content
@@ -125,11 +109,12 @@ formatNonempty convert =
 ---- Path Conversion ----------------------------------------------------------
 
 
-{-| Format a `Path` into an `SvgStringPath`.
+{-| Format a `Path` into a `String` suitable for a `d = "..."` attribute in
+SVG.
 -}
-formatPath : NFixDigits -> Path -> PathString
+formatPath : NFixDigits -> Path -> String
 formatPath n (P.Path subPaths) =
-    formatList (formatSubPath n) subPaths
+    formatList (formatSubPath n) subPaths |> pathStringToString
 
 
 {-| Format a `SubPath` into an `SvgStringPath`.
