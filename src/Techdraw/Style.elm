@@ -10,6 +10,8 @@ module Techdraw.Style exposing
     , RadialGradientParams, RadialGradient
     , linearGradient, radialGradient
     , GradientParams, Gradient, Stop(..), gradient
+    , hashGradient, hashLinearGradient, hashRadialGradient
+    , gradientParams, linearGradientParams, radialGradientParams
     , combineStyle
     , inheritAll
     , fill, fillRule
@@ -55,6 +57,8 @@ module Techdraw.Style exposing
 @docs RadialGradientParams, RadialGradient
 @docs linearGradient, radialGradient
 @docs GradientParams, Gradient, Stop, gradient
+@docs hashGradient, hashLinearGradient, hashRadialGradient
+@docs gradientParams, linearGradientParams, radialGradientParams
 
 
 # Operations
@@ -305,13 +309,6 @@ type Gradient
     = Gradient Hash GradientParams
 
 
-{-| Hasher for a gradient just extracts its pre-computed parameters hash.
--}
-hashGradient : Hasher Gradient
-hashGradient (Gradient hash _) =
-    hash
-
-
 {-| Parameters for a `Gradient` : a list of `Stop`s.
 -}
 type alias GradientParams =
@@ -363,6 +360,50 @@ getStopColor (Stop _ color) =
 gradient : GradientParams -> Gradient
 gradient params =
     Gradient (Hash.fromEncoder encGradientParams <| params) params
+
+
+{-| Hasher for a `Gradient`: just extracts its pre-computed parameters hash.
+-}
+hashGradient : Hasher Gradient
+hashGradient (Gradient hash _) =
+    hash
+
+
+{-| Hasher for a `LinearGradient`: just extract its pre-computed parameters
+hash.
+-}
+hashLinearGradient : Hasher LinearGradient
+hashLinearGradient (LinearGradient hash _) =
+    hash
+
+
+{-| Hasher for a `RadialGradient`: just extract its pre-computed parameters
+hash.
+-}
+hashRadialGradient : Hasher RadialGradient
+hashRadialGradient (RadialGradient hash _) =
+    hash
+
+
+{-| Return the parameters for a `Gradient`.
+-}
+gradientParams : Gradient -> GradientParams
+gradientParams (Gradient _ params) =
+    params
+
+
+{-| Return the parameters for a `LinearGradient`.
+-}
+linearGradientParams : LinearGradient -> LinearGradientParams
+linearGradientParams (LinearGradient _ params) =
+    params
+
+
+{-| Return the parameters for a `RadialGradient`.
+-}
+radialGradientParams : RadialGradient -> RadialGradientParams
+radialGradientParams (RadialGradient _ params) =
+    params
 
 
 
