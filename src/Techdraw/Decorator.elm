@@ -1,6 +1,9 @@
-module Techdraw.Decorator exposing (..)
+module Techdraw.Decorator exposing (Decorator)
 
 {-| Path decorators (arrow-heads, length shortening, etc.
+
+@docs Decorator
+
 -}
 
 import Techdraw.Math exposing (AffineTransform)

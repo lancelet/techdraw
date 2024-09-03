@@ -9,10 +9,7 @@ module Techdraw.Style exposing
     , LinearGradientParams, LinearGradient
     , RadialGradientParams, RadialGradient
     , linearGradient, radialGradient
-    , Gradient, Stop(..), gradient
-    , gradientHexHash
-    , linearGradientHexHash, linearGradientParams
-    , radialGradientHexHash, radialGradientParams
+    , GradientParams, Gradient, Stop(..), gradient
     , combineStyle
     , inheritAll
     , fill, fillRule
@@ -57,10 +54,7 @@ module Techdraw.Style exposing
 @docs LinearGradientParams, LinearGradient
 @docs RadialGradientParams, RadialGradient
 @docs linearGradient, radialGradient
-@docs Gradient, Stop, gradient
-@docs gradientHexHash
-@docs linearGradientHexHash, linearGradientParams
-@docs radialGradientHexHash, radialGradientParams
+@docs GradientParams, Gradient, Stop, gradient
 
 
 # Operations
@@ -76,11 +70,9 @@ module Techdraw.Style exposing
 
 -}
 
-import Bytes.Encode as Encode exposing (Encoder)
 import Color exposing (Color)
-import SHA1
-import Techdraw.Internal.Codec as Codec
-import Techdraw.Math as Math exposing (AffineTransform, P2)
+import Techdraw.Internal.Hash as Hash exposing (Hash, Hasher)
+import Techdraw.Math exposing (AffineTransform, P2)
 
 
 
@@ -206,6 +198,22 @@ type alias LinearGradientParams =
     }
 
 
+{-| Encode LinearGradientParams for hashing.
+-}
+encLinearGradientParams : Hash.Encoder LinearGradientParams
+encLinearGradientParams =
+    Hash.enc4
+        Hash.p2
+        Hash.p2
+        Hash.affineTransform
+        Hash.encHash
+        .start
+        .end
+        .transform
+        (.gradient >> hashGradient)
+        |> Hash.attachTag "Style.LinearGradientParams"
+
+
 {-| Linear gradient.
 
 Internally, this contains the parameters of the linear gradient along with
@@ -213,24 +221,14 @@ a unique hash.
 
 -}
 type LinearGradient
-    = LinearGradient SHA1.Digest UnhashedLinearGradient
-
-
-{-| Unhashed linear gradient.
--}
-type UnhashedLinearGradient
-    = UnhashedLinearGradient LinearGradientParams
+    = LinearGradient Hash LinearGradientParams
 
 
 {-| Create a linear gradient.
 -}
 linearGradient : LinearGradientParams -> LinearGradient
-linearGradient record =
-    let
-        ulg =
-            UnhashedLinearGradient record
-    in
-    LinearGradient (hashUnhashedLinearGradient ulg) ulg
+linearGradient params =
+    LinearGradient (Hash.fromEncoder encLinearGradientParams <| params) params
 
 
 {-| Parameters of a radial gradient.
@@ -257,6 +255,26 @@ type alias RadialGradientParams =
     }
 
 
+{-| Encode the RadialGradientParams for hashing.
+-}
+encRadialGradientParams : Hash.Encoder RadialGradientParams
+encRadialGradientParams =
+    Hash.enc6
+        Hash.p2
+        Hash.f32
+        Hash.p2
+        Hash.f32
+        Hash.affineTransform
+        Hash.encHash
+        .innerCenter
+        .innerRadius
+        .outerCenter
+        .outerRadius
+        .transform
+        (.gradient >> hashGradient)
+        |> Hash.attachTag "Style.RadialGradientParams"
+
+
 {-| Radial gradient.
 
 Internally, this contains the parameters of the radial gradient along with a
@@ -264,24 +282,14 @@ unique hash.
 
 -}
 type RadialGradient
-    = RadialGradient SHA1.Digest UnhashedRadialGradient
-
-
-{-| Unhashed radial gradient.
--}
-type UnhashedRadialGradient
-    = UnhashedRadialGradient RadialGradientParams
+    = RadialGradient Hash RadialGradientParams
 
 
 {-| Create a radial gradient.
 -}
 radialGradient : RadialGradientParams -> RadialGradient
-radialGradient record =
-    let
-        urg =
-            UnhashedRadialGradient record
-    in
-    RadialGradient (hashUnhashedRadialGradient urg) urg
+radialGradient params =
+    RadialGradient (Hash.fromEncoder encRadialGradientParams <| params) params
 
 
 {-| Gradient.
@@ -294,13 +302,28 @@ A gradient contains
 
 -}
 type Gradient
-    = Gradient SHA1.Digest UnhashedGradient
+    = Gradient Hash GradientParams
 
 
-{-| Gradient without any hashing information.
+{-| Hasher for a gradient just extracts its pre-computed parameters hash.
 -}
-type UnhashedGradient
-    = UnhashedGradient (List Stop)
+hashGradient : Hasher Gradient
+hashGradient (Gradient hash _) =
+    hash
+
+
+{-| Parameters for a `Gradient` : a list of `Stop`s.
+-}
+type alias GradientParams =
+    List Stop
+
+
+{-| Hash encoder for gradient parameters.
+-}
+encGradientParams : Hash.Encoder GradientParams
+encGradientParams =
+    Hash.list encStop
+        |> Hash.attachTag "Style.GradientParams"
 
 
 {-| Gradient stop.
@@ -313,6 +336,14 @@ type Stop
     = Stop Float Color
 
 
+{-| Hash encoder for a `Stop`.
+-}
+encStop : Hash.Encoder Stop
+encStop =
+    Hash.enc2 Hash.f32 Hash.color getStopLocation getStopColor
+        |> Hash.attachTag "Style.Stop"
+
+
 {-| Return the location of a gradient stop.
 -}
 getStopLocation : Stop -> Float
@@ -320,93 +351,18 @@ getStopLocation (Stop location _) =
     location
 
 
+{-| Return the color of a gradient stop.
+-}
+getStopColor : Stop -> Color
+getStopColor (Stop _ color) =
+    color
+
+
 {-| Create a `Gradient` from a list of stops.
 -}
-gradient : List Stop -> Gradient
-gradient rawStops =
-    let
-        unhashed =
-            UnhashedGradient <| List.sortBy getStopLocation rawStops
-    in
-    Gradient (hashUnhashedGradient unhashed) unhashed
-
-
-{-| Return a hex string containing the hash of a `Gradient`.
-
-    import Color
-
-    gradientHexHash <|
-        gradient
-            [ Stop 0.0 Color.black
-            , Stop 0.5 Color.blue
-            , Stop 0.7 Color.red
-            , Stop 1.0 Color.green
-            ]
-    --> "4233f96f9909e03055aeb16861262ec25214bcc4"
-
-The hash should be the same if `Stop`s are re-ordered; eg:
-
-    import Color
-
-    gradientHexHash <|
-        gradient
-            [ Stop 1.0 Color.green
-            , Stop 0.0 Color.black
-            , Stop 0.7 Color.red
-            , Stop 0.5 Color.blue
-            ]
-    --> "4233f96f9909e03055aeb16861262ec25214bcc4"
-
-But will be different if the `Stop`s are different:
-
-    import Color
-
-    gradientHexHash <|
-        gradient
-            [ Stop 0.0 Color.black
-            , Stop 1.0 Color.white
-            ]
-    --> "59bc04f8c6298d5bcbe6f89ed20ec316cc8a5959"
-
--}
-gradientHexHash : Gradient -> String
-gradientHexHash (Gradient digest _) =
-    SHA1.toHex digest
-
-
-{-| Return the hex hash of a linear gradient.
--}
-linearGradientHexHash : LinearGradient -> String
-linearGradientHexHash (LinearGradient digest _) =
-    SHA1.toHex digest
-
-
-{-| Return the parameters of a linear gradient.
--}
-linearGradientParams : LinearGradient -> LinearGradientParams
-linearGradientParams (LinearGradient _ (UnhashedLinearGradient params)) =
-    params
-
-
-{-| Return the hex hash of a radial gradient.
--}
-radialGradientHexHash : RadialGradient -> String
-radialGradientHexHash (RadialGradient digest _) =
-    SHA1.toHex digest
-
-
-{-| Return the parameters of a radial gradient.
--}
-radialGradientParams : RadialGradient -> RadialGradientParams
-radialGradientParams (RadialGradient _ (UnhashedRadialGradient params)) =
-    params
-
-
-{-| Return the SHA1 Digest of a `Gradient`.
--}
-gradientSHA1Digest : Gradient -> SHA1.Digest
-gradientSHA1Digest (Gradient digest _) =
-    digest
+gradient : GradientParams -> Gradient
+gradient params =
+    Gradient (Hash.fromEncoder encGradientParams <| params) params
 
 
 
@@ -593,94 +549,3 @@ dashArray d =
 dashOffset : Float -> Style -> Style
 dashOffset o =
     styleModifyStroke <| \(Stroke st) -> Stroke { st | dashOffset = Set o }
-
-
-
----- Hashing ------------------------------------------------------------------
-
-
-{-| Hash an `UnhashedLinearGradient`.
--}
-hashUnhashedLinearGradient : UnhashedLinearGradient -> SHA1.Digest
-hashUnhashedLinearGradient =
-    encLinearGradient >> Encode.encode >> SHA1.fromBytes
-
-
-{-| Hash an `UnhashedRadialGradient`.
--}
-hashUnhashedRadialGradient : UnhashedRadialGradient -> SHA1.Digest
-hashUnhashedRadialGradient =
-    encRadialGradient >> Encode.encode >> SHA1.fromBytes
-
-
-{-| Hash an `UnhashedGradient`.
--}
-hashUnhashedGradient : UnhashedGradient -> SHA1.Digest
-hashUnhashedGradient =
-    encGradient >> Encode.encode >> SHA1.fromBytes
-
-
-{-| Encode a `RadialGradient`. Only for hashing.
-
-This is not a complete encoding, because it encodes the hash of the gradient.
-
--}
-encRadialGradient : UnhashedRadialGradient -> Encoder
-encRadialGradient (UnhashedRadialGradient g) =
-    Encode.sequence
-        [ Math.encP2 g.innerCenter
-        , Codec.encf32 g.innerRadius
-        , Math.encP2 g.outerCenter
-        , Codec.encf32 g.outerRadius
-        , Math.encAffineTransform g.transform
-        , encSHA1Digest <| gradientSHA1Digest <| g.gradient
-        ]
-
-
-{-| Encode a `LinearGradient`. Only for hashing.
-
-This is not a complete encoding, because it encodes the hash of the gradient.
-
--}
-encLinearGradient : UnhashedLinearGradient -> Encoder
-encLinearGradient (UnhashedLinearGradient g) =
-    Encode.sequence
-        [ Math.encP2 g.start
-        , Math.encP2 g.end
-        , Math.encAffineTransform g.transform
-        , encSHA1Digest <| gradientSHA1Digest <| g.gradient
-        ]
-
-
-{-| Encode a `SHA1.Digest`. Only for hashing.
--}
-encSHA1Digest : SHA1.Digest -> Encoder
-encSHA1Digest digest =
-    let
-        d =
-            SHA1.toInt32s digest
-    in
-    Encode.sequence
-        [ Codec.encu32 d.a
-        , Codec.encu32 d.b
-        , Codec.encu32 d.c
-        , Codec.encu32 d.d
-        , Codec.encu32 d.e
-        ]
-
-
-{-| Encode an `UnhashedGradient`. Only for hashing.
--}
-encGradient : UnhashedGradient -> Encoder
-encGradient (UnhashedGradient stops) =
-    Codec.encList encStop stops
-
-
-{-| Encode a `Stop`. Only for hashing.
--}
-encStop : Stop -> Encoder
-encStop (Stop location color) =
-    Encode.sequence
-        [ Codec.encf32 location
-        , Codec.encColor color
-        ]
