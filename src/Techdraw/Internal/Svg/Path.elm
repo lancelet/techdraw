@@ -1,5 +1,5 @@
 module Techdraw.Internal.Svg.Path exposing
-    ( formatPath
+    ( toString
     , NFixDigits(..)
     , toFixed
     )
@@ -7,9 +7,9 @@ module Techdraw.Internal.Svg.Path exposing
 {-| String representation of SVG paths.
 
 
-# Formatting a Path
+# Converting a Path to SVG
 
-@docs formatPath
+@docs toString
 
 
 # Number Formatting
@@ -111,9 +111,13 @@ formatNonempty convert =
 
 {-| Format a `Path` into a `String` suitable for a `d = "..."` attribute in
 SVG.
+
+`NFixDigits` specifies the number of digits to use after the decimal place
+in the path string that is produced.
+
 -}
-formatPath : NFixDigits -> Path -> String
-formatPath n (P.Path subPaths) =
+toString : NFixDigits -> Path -> String
+toString n (P.Path subPaths) =
     formatList (formatSubPath n) subPaths |> pathStringToString
 
 
