@@ -15,7 +15,6 @@
     "Techdraw.Style",
     "Techdraw.Shapes.Simple",
     "Techdraw.Shapes.Spring",
-    "Techdraw.Internal.Codec",
     "Techdraw.Internal.Hash",
     "Techdraw.Internal.Svg.Path"
   ],
