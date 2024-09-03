@@ -1,5 +1,6 @@
 module Techdraw.Internal.Hash exposing
     ( Hash, Hasher, Manifest, Encoder
+    , toHex
     , fromEncoder
     , f32, u32
     , encHash
@@ -12,10 +13,39 @@ module Techdraw.Internal.Hash exposing
 
 {-| Hashing values.
 
+To hash a value, there are typically two steps:
+
+1.  Create an [`Encoder`](#Encoder) for the type.
+2.  Use the [`fromEncoder`](#fromEncoder) function to create a hasher.
+
+For example, suppose we have our own two-element record called `G`. We
+might create a [`Hasher`](#Hasher) for it like this:
+
+    type alias G
+        = { x : Float, y : Float }
+
+    encG : Encoder G
+    encG =
+        enc2 f32 f32 .x .y |> attachTag "MyModule.G"
+
+    hashG : Hasher G
+    hashG =
+        fromEncoder encG
+
+    hashG {x = 1, y = 2} |> toHex
+    --> "997277d2368dc71980e42a29255275a33544f449"
+
+    hashG {x = 2, y = 1} |> toHex
+    --> "6b0444634a826e716b090fdae9c183bc5f41af36"
+
+The hashing works by first encoding the value to a binary blob, and then
+running a SHA1 algorithm over the blob to produce a hash.
+
 
 # Hashing Types and Functions
 
 @docs Hash, Hasher, Manifest, Encoder
+@docs toHex
 @docs fromEncoder
 @docs f32, u32
 @docs encHash
@@ -64,6 +94,13 @@ type Manifest
 -}
 type alias Encoder a =
     a -> Manifest
+
+
+{-| Convert a `Hash` value to a hex string.
+-}
+toHex : Hash -> String
+toHex =
+    unHash >> SHA1.toHex
 
 
 {-| Unwrap the `Hash` newtype.
@@ -143,7 +180,6 @@ attachTag tag encFn =
             [ Manifest (BE.string tag)
             , encFn value
             ]
-
 
 
 {-| Apply 2 encoders in sequence.
