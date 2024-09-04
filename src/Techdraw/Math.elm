@@ -1,5 +1,5 @@
 module Techdraw.Math exposing
-    ( sq
+    ( sq, toRadians, toDegrees
     , Tol(..), closeFloat
     , Angle2Pi, AnglePi, OrientationPi
     , angle2Pi, anglePi, orientationPi
@@ -53,7 +53,7 @@ module Techdraw.Math exposing
 
 # Floating Point Functions
 
-@docs sq
+@docs sq, toRadians, toDegrees
 
 
 # Comparison of Floating-Point Values
@@ -309,6 +309,20 @@ that applies an affine transformation to a point.
 sq : Float -> Float
 sq x =
     x * x
+
+
+{-| Convert an angle in degrees to radians.
+-}
+toRadians : Float -> Float
+toRadians deg =
+    deg * pi / 180
+
+
+{-| Convert an angle in radius to degrees.
+-}
+toDegrees : Float -> Float
+toDegrees rad =
+    rad * 180 / pi
 
 
 

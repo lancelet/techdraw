@@ -5,6 +5,7 @@ module Techdraw.Internal.Svg.Env exposing
     , getLocalToWorld, getWarnings, getNFixDigits, getStyle
     , modStyle, applyStyleAtom
     , getDefs, modDefs
+    , concatTransform
     , init
     , thread
     )
@@ -17,6 +18,7 @@ module Techdraw.Internal.Svg.Env exposing
 @docs getLocalToWorld, getWarnings, getNFixDigits, getStyle
 @docs modStyle, applyStyleAtom
 @docs getDefs, modDefs
+@docs concatTransform
 @docs init
 @docs thread
 
@@ -96,6 +98,19 @@ getDefs (Env env) =
 modDefs : (Defs -> Defs) -> Env msg -> Env msg
 modDefs modFn (Env oldEnv) =
     Env { oldEnv | defs = modFn oldEnv.defs }
+
+
+{-| Concatenate a transformation with the current local-to-world
+transformation. This post-multiplies the supplied transformation with the
+local-to-world transform.
+-}
+concatTransform : AffineTransform -> Env msg -> Env msg
+concatTransform childToParent (Env oldEnv) =
+    Env
+        { oldEnv
+            | localToWorld =
+                Math.affMatMul oldEnv.localToWorld childToParent
+        }
 
 
 {-| Warning string.

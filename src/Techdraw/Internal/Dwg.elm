@@ -7,6 +7,7 @@ module Techdraw.Internal.Dwg exposing (Dwg(..))
 -}
 
 import Techdraw.Internal.StyleAtom exposing (StyleAtom)
+import Techdraw.Math exposing (AffineTransform)
 import Techdraw.Path exposing (Path)
 
 
@@ -16,3 +17,4 @@ type Dwg msg
     = DwgEmpty
     | DwgPath Path
     | DwgStyled StyleAtom (Dwg msg)
+    | DwgTransformed AffineTransform (Dwg msg)

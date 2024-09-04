@@ -246,7 +246,7 @@ formatFloat n =
 -}
 formatOrientationPi : NFixDigits -> OrientationPi -> PathString
 formatOrientationPi n =
-    formatFloat n << M.getOrientationPi
+    formatFloat n << M.toDegrees << M.getOrientationPi
 
 
 {-| Format a `Bool` into an `SvgStringPath`.

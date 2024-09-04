@@ -249,6 +249,12 @@ step state =
                 |> setExpr (Init drawing)
                 |> modEnvr (Env.applyStyleAtom atom)
 
+        {- Update the local-to-world transformation in the environment. -}
+        ( Init (DwgTransformed childToParent drawing), _ ) ->
+            state
+                |> setExpr (Init drawing)
+                |> modEnvr (Env.concatTransform childToParent)
+
         {- ----------------------------------------------------------------- -}
         {- Continuation states -}
         {- ----------------------------------------------------------------- -}
