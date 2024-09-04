@@ -31,12 +31,7 @@ elm-doc-preview
 
 ## TODO
 
-- Capture L2W transformation when events are declared, not when they are
-  attached to objects.
-- Text.
-- "Bake" node.
-- Refactor to separate out styles and events stuff from the huge main file.
-- Use a non-recursive traversal of the graph.
-- Need a way to draw items in world coordinates.
-- Arrow heads.
-- More examples.
+- Events.
+- Baked nodes (with ID for `<use>`).
+- Simple text.
+- Elmtris.

@@ -6,6 +6,7 @@ module Techdraw.Internal.Dwg exposing (Dwg(..))
 
 -}
 
+import Techdraw.Event exposing (EventHandler)
 import Techdraw.Internal.StyleAtom exposing (StyleAtom)
 import Techdraw.Math exposing (AffineTransform)
 import Techdraw.Path exposing (Path)
@@ -20,3 +21,4 @@ type Dwg msg
     | DwgTransformed AffineTransform (Dwg msg)
     | DwgAtop (Dwg msg) (Dwg msg)
     | DwgBelow (Dwg msg) (Dwg msg)
+    | DwgEventHandler (EventHandler msg) (Dwg msg)

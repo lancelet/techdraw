@@ -6,6 +6,7 @@ module Techdraw.Internal.Svg.Env exposing
     , modStyle, applyStyleAtom
     , getDefs, modDefs
     , concatTransform
+    , getEventHandlers, addEventHandler
     , init
     , thread
     )
@@ -19,11 +20,13 @@ module Techdraw.Internal.Svg.Env exposing
 @docs modStyle, applyStyleAtom
 @docs getDefs, modDefs
 @docs concatTransform
+@docs getEventHandlers, addEventHandler
 @docs init
 @docs thread
 
 -}
 
+import Techdraw.Event exposing (EventHandler)
 import Techdraw.Internal.StyleAtom as StyleAtom exposing (StyleAtom)
 import Techdraw.Internal.Svg.Defs as Defs exposing (Defs)
 import Techdraw.Internal.Svg.Path exposing (NFixDigits(..))
@@ -41,6 +44,7 @@ type Env msg
         , nFixDigits : NFixDigits
         , style : Style
         , defs : Defs
+        , eventHandlers : List (EventHandler msg)
         }
 
 
@@ -113,6 +117,23 @@ concatTransform childToParent (Env oldEnv) =
         }
 
 
+{-| Return the list of event handlers from the environment.
+-}
+getEventHandlers : Env msg -> List (EventHandler msg)
+getEventHandlers (Env env) =
+    env.eventHandlers
+
+
+{-| Prepend an event handler to the environment
+-}
+addEventHandler : EventHandler msg -> Env msg -> Env msg
+addEventHandler eventHandler (Env oldEnv) =
+    Env
+        { oldEnv
+            | eventHandlers = eventHandler :: oldEnv.eventHandlers
+        }
+
+
 {-| Warning string.
 -}
 type Warning
@@ -136,6 +157,7 @@ init sizing =
         , nFixDigits = NFixDigits 2
         , style = Style.inheritAll
         , defs = Defs.empty
+        , eventHandlers = []
         }
 
 
@@ -181,4 +203,5 @@ thread (Env ancestor) (Env next) =
         , nFixDigits = ancestor.nFixDigits
         , style = ancestor.style
         , defs = next.defs
+        , eventHandlers = ancestor.eventHandlers
         }

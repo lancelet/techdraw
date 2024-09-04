@@ -5,6 +5,7 @@ module Techdraw exposing
     , dashArray, dashOffset
     , transform, translate, rotateDegrees, rotateDegreesAbout
     , skewXDegrees, scale
+    , onEvent
     , toSvg, toSvgWithWarnings
     )
 
@@ -29,6 +30,11 @@ module Techdraw exposing
 @docs skewXDegrees, scale
 
 
+# Adding Handlers for Events
+
+@docs onEvent
+
+
 # Converting Drawings to SVG
 
 @docs toSvg, toSvgWithWarnings
@@ -36,6 +42,7 @@ module Techdraw exposing
 -}
 
 import Html exposing (Html)
+import Techdraw.Event exposing (EventHandler)
 import Techdraw.Internal.Dwg exposing (Dwg(..))
 import Techdraw.Internal.StyleAtom as StyleAtom exposing (StyleAtom)
 import Techdraw.Internal.Svg.Machine as DwgMachine
@@ -224,6 +231,17 @@ skewXDegrees =
 scale : Float -> Float -> Drawing msg -> Drawing msg
 scale scaleX scaleY =
     Math.Scaling scaleX scaleY |> Math.affScaling |> transform
+
+
+
+---- Adding Handlers for Events -----------------------------------------------
+
+
+{-| Add an event handler to an existing drawing.
+-}
+onEvent : EventHandler msg -> Drawing msg -> Drawing msg
+onEvent eventHandler =
+    unDrawing >> DwgEventHandler eventHandler >> Drawing
 
 
 

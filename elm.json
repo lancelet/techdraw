@@ -19,6 +19,7 @@
     "Techdraw.Internal.StyleAtom",
     "Techdraw.Internal.Svg.Defs",
     "Techdraw.Internal.Svg.Env",
+    "Techdraw.Internal.Svg.Event",
     "Techdraw.Internal.Svg.Extras",
     "Techdraw.Internal.Svg.Machine",
     "Techdraw.Internal.Svg.Path",

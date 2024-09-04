@@ -24,9 +24,11 @@ This module implements a largely non-recursive state machine to evaluate a
 
 import Html exposing (Attribute, Html)
 import Html.Attributes as HtmlA
+import Techdraw.Event exposing (EventHandler)
 import Techdraw.Internal.Dwg exposing (Dwg(..))
 import Techdraw.Internal.Svg.Defs as Defs
 import Techdraw.Internal.Svg.Env as Env exposing (Env, Warning)
+import Techdraw.Internal.Svg.Event exposing (eventHandlersToSvgAttrs)
 import Techdraw.Internal.Svg.Path as SvgPath
 import Techdraw.Internal.Svg.Style as SvgStyle
 import Techdraw.Path as Path exposing (Path)
@@ -262,6 +264,12 @@ step state =
                 |> setExpr (Init bottomDrawing)
                 |> suspendKont (KontBelow1 topDrawing)
 
+        {- Add a pending event handler to the environment. -}
+        ( Init (DwgEventHandler eventHandler drawing), _ ) ->
+            state
+                |> setExpr (Init drawing)
+                |> modEnvr (Env.addEventHandler eventHandler)
+
         {- ----------------------------------------------------------------- -}
         {- Continuation states -}
         {- ----------------------------------------------------------------- -}
@@ -366,9 +374,6 @@ styleAttrs state =
 
 
 {-| Convert a `Path` to SVG in the current environment.
-
-TODO: Styling
-
 -}
 pathToSvg : Env msg -> List (Attribute msg) -> Path -> List (Svg msg)
 pathToSvg env sAttrs path =
@@ -385,14 +390,26 @@ pathToSvg env sAttrs path =
         attrs =
             SvgA.d str :: sAttrs
     in
-    [ TypedSvg.path attrs [] ]
+    attachPendingEvents env [ TypedSvg.path attrs [] ]
 
 
 {-| Combine drawings in the specified order.
-
-TODO: Handle discharging events.
-
 -}
 combineDrawings : Env msg -> List (Svg msg) -> List (Svg msg) -> List (Svg msg)
-combineDrawings _ topSvgs bottomSvgs =
-    bottomSvgs ++ topSvgs
+combineDrawings env topSvgs bottomSvgs =
+    bottomSvgs ++ topSvgs |> attachPendingEvents env
+
+
+{-| Attach any pending events from the environment to produced SVG.
+-}
+attachPendingEvents : Env msg -> List (Svg msg) -> List (Svg msg)
+attachPendingEvents env svgs =
+    let
+        handlers =
+            Env.getEventHandlers env
+    in
+    if List.isEmpty handlers then
+        svgs
+
+    else
+        [ TypedSvg.g (eventHandlersToSvgAttrs handlers) svgs ]
