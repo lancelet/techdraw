@@ -18,3 +18,4 @@ type Dwg msg
     | DwgPath Path
     | DwgStyled StyleAtom (Dwg msg)
     | DwgTransformed AffineTransform (Dwg msg)
+    | DwgAtop (Dwg msg) (Dwg msg)

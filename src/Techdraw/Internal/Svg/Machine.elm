@@ -164,7 +164,8 @@ type Expr msg
 {-| Continuation for the state machine.
 -}
 type Kont msg
-    = KontNothing
+    = KontAtop1 (Dwg msg) (Env msg)
+    | KontAtop2 (List (Svg msg)) (Env msg)
 
 
 {-| State in the state machine.
@@ -255,11 +256,39 @@ step state =
                 |> setExpr (Init drawing)
                 |> modEnvr (Env.concatTransform childToParent)
 
+        {- Draw the first drawing on top of the second. -}
+        ( Init (DwgAtop topDrawing bottomDrawing), _ ) ->
+            state
+                |> setExpr (Init topDrawing)
+                |> suspendKont (KontAtop1 bottomDrawing)
+
         {- ----------------------------------------------------------------- -}
         {- Continuation states -}
         {- ----------------------------------------------------------------- -}
-        ( Fine _, KontNothing :: ks ) ->
-            { state | kont = ks }
+        {- Process the first `DwgAtop` continuation.
+
+           At this continuation, we have evaluated the first argument of a
+           `DwgAtop` value, and have to evaluate the second argument.
+        -}
+        ( Fine topSvgs, (KontAtop1 bottomDrawing susEnv) :: _ ) ->
+            state
+                |> threadEnvr susEnv
+                |> setExpr (Init bottomDrawing)
+                |> popKont
+                |> suspendKont (KontAtop2 topSvgs)
+
+        {- Process the second `DwgAtop` continuation.
+
+           At this continuation, we have evaluated both arguments of a
+           `DwgAtop` value, and have to package them together.
+
+           TODO: Handle discharging events into an SVG Group
+        -}
+        ( Fine bottomSvgs, (KontAtop2 topSvgs susEnv) :: _ ) ->
+            state
+                |> threadEnvr susEnv
+                |> setExpr (Fine <| combineDrawings susEnv topSvgs bottomSvgs)
+                |> popKont
 
 
 {-| Set the expression in the state.
@@ -274,6 +303,34 @@ setExpr e oldState =
 modEnvr : (Env msg -> Env msg) -> State msg -> State msg
 modEnvr envModFn oldState =
     { oldState | envr = envModFn oldState.envr }
+
+
+{-| Thread the environment from completing a continuation through the
+suspended environment from before the continuation was started.
+-}
+threadEnvr : Env msg -> State msg -> State msg
+threadEnvr suspendedEnvironment oldState =
+    { oldState | envr = Env.thread suspendedEnvironment oldState.envr }
+
+
+{-| Create a suspended continuation with the current environment, and prepend
+it to the list of pending continuations in the state.
+-}
+suspendKont : (Env msg -> Kont msg) -> State msg -> State msg
+suspendKont envToKont oldState =
+    { oldState | kont = envToKont oldState.envr :: oldState.kont }
+
+
+{-| Pop the top continuation from the state.
+-}
+popKont : State msg -> State msg
+popKont oldState =
+    case oldState.kont of
+        [] ->
+            oldState
+
+        _ :: ks ->
+            { oldState | kont = ks }
 
 
 {-| Get the style attributes for the current state's style.
@@ -308,3 +365,13 @@ pathToSvg env sAttrs path =
             SvgA.d str :: sAttrs
     in
     [ TypedSvg.path attrs [] ]
+
+
+{-| Combine drawings in the specified order.
+
+TODO: Handle discharging events.
+
+-}
+combineDrawings : Env msg -> List (Svg msg) -> List (Svg msg) -> List (Svg msg)
+combineDrawings _ topSvgs bottomSvgs =
+    bottomSvgs ++ topSvgs

@@ -80,26 +80,43 @@ lg =
         }
 
 
+lg2 : LinearGradient
+lg2 =
+    Style.linearGradient
+        { start = p2 (halfWidth - circleRadius) (halfHeight + circleRadius)
+        , end = p2 (halfWidth + circleRadius) (halfHeight - circleRadius)
+        , transform = Math.affIdentity
+        , gradient =
+            Style.gradient
+                [ Stop 0 Color.purple
+                , Stop 1 Color.green
+                ]
+        }
+
+
 drawing : Model -> Drawing msg
 drawing (Model model) =
-    TD.path
-        (circle
-            { r = circleRadius
-            , cx = drawingWidth / 2
-            , cy = drawingHeight / 2
-            }
+    TD.atop
+        (TD.path
+            (circle
+                { r = circleRadius
+                , cx = drawingWidth / 2
+                , cy = drawingHeight / 2
+                }
+            )
         )
-        {-
-           (rectRounded
-               { x = halfWidth - circleRadius
-               , y = halfHeight - circleRadius
-               , width = 2 * circleRadius
-               , height = 2 * circleRadius
-               , rx = 0.2 * circleRadius
-               , ry = 0.2 * circleRadius
-               }
-           )
-        -}
+        (TD.path
+            (rectRounded
+                { x = halfWidth - circleRadius
+                , y = halfHeight - circleRadius
+                , width = 2 * circleRadius
+                , height = 2 * circleRadius
+                , rx = 0.2 * circleRadius
+                , ry = 0.2 * circleRadius
+                }
+            )
+            |> TD.fill (Style.PaintLinearGradient lg2)
+        )
         |> TD.fill (Style.PaintLinearGradient lg)
         |> TD.stroke (Style.Paint Color.black)
         |> TD.strokeWidth 5
