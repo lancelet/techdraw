@@ -210,18 +210,11 @@ figures on top of the value in `NFixDigits`.
 -}
 formatArcTo : NFixDigits -> ArcTo -> PathString
 formatArcTo n (P.ArcTo arcTo) =
-    let
-        (NFixDigits linDigits) =
-            n
-
-        nAngDigits =
-            NFixDigits (linDigits + 2)
-    in
     joinListWithSpace
         [ PathString "A"
         , formatFloat n arcTo.rx
         , formatFloat n arcTo.ry
-        , formatOrientationPi nAngDigits arcTo.xOrient
+        , formatOrientationPi n arcTo.xOrient
         , formatBool arcTo.large
         , formatBool arcTo.sweep
         , formatP2 n arcTo.end

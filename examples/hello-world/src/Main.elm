@@ -97,12 +97,23 @@ lg2 =
 drawing : Model -> Drawing msg
 drawing (Model model) =
     TD.atop
-        (TD.path
-            (circle
-                { r = circleRadius
-                , cx = drawingWidth / 2
-                , cy = drawingHeight / 2
-                }
+        (TD.below
+            (TD.path
+                (circle
+                    { r = circleRadius
+                    , cx = drawingWidth / 2
+                    , cy = drawingHeight / 2
+                    }
+                )
+            )
+            (TD.path
+                (circle
+                    { r = circleRadius / 3
+                    , cx = drawingWidth / 2
+                    , cy = drawingHeight / 2
+                    }
+                )
+                |> TD.fill (Style.Paint Color.darkRed)
             )
         )
         (TD.path
@@ -119,7 +130,7 @@ drawing (Model model) =
         )
         |> TD.fill (Style.PaintLinearGradient lg)
         |> TD.stroke (Style.Paint Color.black)
-        |> TD.strokeWidth 5
+        |> TD.strokeWidth 0.2
         |> (-- Scale and Skew about the middle of the drawing
             TD.translate (Math.v2 -halfWidth -halfHeight)
                 >> TD.scale model.scaleX model.scaleY

@@ -25,7 +25,6 @@ This module implements a largely non-recursive state machine to evaluate a
 import Html exposing (Attribute, Html)
 import Html.Attributes as HtmlA
 import Techdraw.Internal.Dwg exposing (Dwg(..))
-import Techdraw.Internal.StyleAtom as StyleAtom
 import Techdraw.Internal.Svg.Defs as Defs
 import Techdraw.Internal.Svg.Env as Env exposing (Env, Warning)
 import Techdraw.Internal.Svg.Path as SvgPath
@@ -166,6 +165,8 @@ type Expr msg
 type Kont msg
     = KontAtop1 (Dwg msg) (Env msg)
     | KontAtop2 (List (Svg msg)) (Env msg)
+    | KontBelow1 (Dwg msg) (Env msg)
+    | KontBelow2 (List (Svg msg)) (Env msg)
 
 
 {-| State in the state machine.
@@ -175,13 +176,6 @@ type alias State msg =
     , envr : Env msg
     , kont : List (Kont msg)
     }
-
-
-{-| Final SVG value, with an empty list of SVGs.
--}
-emptyFine : Expr msg
-emptyFine =
-    Fine []
 
 
 {-| Inject an initial size and drawing into the machine state.
@@ -262,6 +256,12 @@ step state =
                 |> setExpr (Init topDrawing)
                 |> suspendKont (KontAtop1 bottomDrawing)
 
+        {- Draw the first drawing below the second. -}
+        ( Init (DwgBelow bottomDrawing topDrawing), _ ) ->
+            state
+                |> setExpr (Init bottomDrawing)
+                |> suspendKont (KontBelow1 topDrawing)
+
         {- ----------------------------------------------------------------- -}
         {- Continuation states -}
         {- ----------------------------------------------------------------- -}
@@ -281,10 +281,31 @@ step state =
 
            At this continuation, we have evaluated both arguments of a
            `DwgAtop` value, and have to package them together.
-
-           TODO: Handle discharging events into an SVG Group
         -}
         ( Fine bottomSvgs, (KontAtop2 topSvgs susEnv) :: _ ) ->
+            state
+                |> threadEnvr susEnv
+                |> setExpr (Fine <| combineDrawings susEnv topSvgs bottomSvgs)
+                |> popKont
+
+        {- Process the first `DwgBelow` continuation.
+
+           At this continuation, we have evaluated the first argument of a
+           `DwgBelow` value, and have to evaluate the second argument.
+        -}
+        ( Fine bottomSvgs, (KontBelow1 topDrawing susEnv) :: _ ) ->
+            state
+                |> threadEnvr susEnv
+                |> setExpr (Init topDrawing)
+                |> popKont
+                |> suspendKont (KontBelow2 bottomSvgs)
+
+        {- Process the second `DwgBelow` continuation.
+
+           At this continuation, we have evaluated both arguments of a
+           `DwgBelow` value, and have to package them together.
+        -}
+        ( Fine topSvgs, (KontBelow2 bottomSvgs susEnv) :: _ ) ->
             state
                 |> threadEnvr susEnv
                 |> setExpr (Fine <| combineDrawings susEnv topSvgs bottomSvgs)
