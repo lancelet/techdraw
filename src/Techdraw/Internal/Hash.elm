@@ -73,6 +73,9 @@ import Techdraw.Math as Math exposing (AffineTransform, M22, P2, V2)
 
 
 {-| A hash digest.
+
+Use [`toHex`](#toHex) to convert a `Hash` to a `String`.
+
 -}
 type Hash
     = Hash SHA1.Digest

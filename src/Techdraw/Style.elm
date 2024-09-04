@@ -9,9 +9,11 @@ module Techdraw.Style exposing
     , LinearGradientParams, LinearGradient
     , RadialGradientParams, RadialGradient
     , linearGradient, radialGradient
+    , linearGradientApplyAffineTransform, radialGradientApplyAffineTransform
     , GradientParams, Gradient, Stop(..), gradient
     , hashGradient, hashLinearGradient, hashRadialGradient
     , gradientParams, linearGradientParams, radialGradientParams
+    , stopLocation, stopColor
     , combineStyle
     , inheritAll
     , fill, fillRule
@@ -56,9 +58,11 @@ module Techdraw.Style exposing
 @docs LinearGradientParams, LinearGradient
 @docs RadialGradientParams, RadialGradient
 @docs linearGradient, radialGradient
+@docs linearGradientApplyAffineTransform, radialGradientApplyAffineTransform
 @docs GradientParams, Gradient, Stop, gradient
 @docs hashGradient, hashLinearGradient, hashRadialGradient
 @docs gradientParams, linearGradientParams, radialGradientParams
+@docs stopLocation, stopColor
 
 
 # Operations
@@ -76,7 +80,7 @@ module Techdraw.Style exposing
 
 import Color exposing (Color)
 import Techdraw.Internal.Hash as Hash exposing (Hash, Hasher)
-import Techdraw.Math exposing (AffineTransform, P2)
+import Techdraw.Math as Math exposing (AffineTransform, P2)
 
 
 
@@ -235,6 +239,24 @@ linearGradient params =
     LinearGradient (Hash.fromEncoder encLinearGradientParams <| params) params
 
 
+{-| Apply an affine transformation to a `LinearGradient`. This is done by
+adjusting the affine transformation within the gradient itself.
+-}
+linearGradientApplyAffineTransform :
+    AffineTransform
+    -> LinearGradient
+    -> LinearGradient
+linearGradientApplyAffineTransform transform lg =
+    let
+        params =
+            linearGradientParams lg
+    in
+    linearGradient
+        { params
+            | transform = Math.affMatMul transform params.transform
+        }
+
+
 {-| Parameters of a radial gradient.
 
 A radial gradient is drawn between an "inner circle" and an "outer circle".
@@ -296,6 +318,24 @@ radialGradient params =
     RadialGradient (Hash.fromEncoder encRadialGradientParams <| params) params
 
 
+{-| Apply an affine transformation to a `RadialGradient`. This is done by
+adjusting the affine transformation within the gradient itself.
+-}
+radialGradientApplyAffineTransform :
+    AffineTransform
+    -> RadialGradient
+    -> RadialGradient
+radialGradientApplyAffineTransform transform rg =
+    let
+        params =
+            radialGradientParams rg
+    in
+    radialGradient
+        { params
+            | transform = Math.affMatMul transform params.transform
+        }
+
+
 {-| Gradient.
 
 A gradient contains
@@ -337,21 +377,21 @@ type Stop
 -}
 encStop : Hash.Encoder Stop
 encStop =
-    Hash.enc2 Hash.f32 Hash.color getStopLocation getStopColor
+    Hash.enc2 Hash.f32 Hash.color stopLocation stopColor
         |> Hash.attachTag "Style.Stop"
 
 
 {-| Return the location of a gradient stop.
 -}
-getStopLocation : Stop -> Float
-getStopLocation (Stop location _) =
+stopLocation : Stop -> Float
+stopLocation (Stop location _) =
     location
 
 
 {-| Return the color of a gradient stop.
 -}
-getStopColor : Stop -> Color
-getStopColor (Stop _ color) =
+stopColor : Stop -> Color
+stopColor (Stop _ color) =
     color
 
 

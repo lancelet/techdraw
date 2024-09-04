@@ -14,8 +14,8 @@ module Techdraw.Event exposing
 
 -}
 
-import Techdraw.CSys exposing (CSysName)
 import Techdraw.Math exposing (P2)
+import Techdraw.Types exposing (CSysName)
 
 
 {-| All event handler types.
