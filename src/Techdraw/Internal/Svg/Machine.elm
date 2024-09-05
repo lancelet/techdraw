@@ -167,8 +167,8 @@ type Expr msg
 type Kont msg
     = KontAtop1 (Dwg msg) (Env msg)
     | KontAtop2 (List (Svg msg)) (Env msg)
-    | KontBelow1 (Dwg msg) (Env msg)
-    | KontBelow2 (List (Svg msg)) (Env msg)
+    | KontBeneath1 (Dwg msg) (Env msg)
+    | KontBeneath2 (List (Svg msg)) (Env msg)
 
 
 {-| State in the state machine.
@@ -258,11 +258,11 @@ step state =
                 |> setExpr (Init topDrawing)
                 |> suspendKont (KontAtop1 bottomDrawing)
 
-        {- Draw the first drawing below the second. -}
-        ( Init (DwgBelow bottomDrawing topDrawing), _ ) ->
+        {- Draw the first drawing beneath the second. -}
+        ( Init (DwgBeneath bottomDrawing topDrawing), _ ) ->
             state
                 |> setExpr (Init bottomDrawing)
-                |> suspendKont (KontBelow1 topDrawing)
+                |> suspendKont (KontBeneath1 topDrawing)
 
         {- Add a pending event handler to the environment. -}
         ( Init (DwgEventHandler eventHandler drawing), _ ) ->
@@ -296,24 +296,24 @@ step state =
                 |> setExpr (Fine <| combineDrawings susEnv topSvgs bottomSvgs)
                 |> popKont
 
-        {- Process the first `DwgBelow` continuation.
+        {- Process the first `DwgBeneath` continuation.
 
            At this continuation, we have evaluated the first argument of a
-           `DwgBelow` value, and have to evaluate the second argument.
+           `DwgBeneath` value, and have to evaluate the second argument.
         -}
-        ( Fine bottomSvgs, (KontBelow1 topDrawing susEnv) :: _ ) ->
+        ( Fine bottomSvgs, (KontBeneath1 topDrawing susEnv) :: _ ) ->
             state
                 |> threadEnvr susEnv
                 |> setExpr (Init topDrawing)
                 |> popKont
-                |> suspendKont (KontBelow2 bottomSvgs)
+                |> suspendKont (KontBeneath2 bottomSvgs)
 
-        {- Process the second `DwgBelow` continuation.
+        {- Process the second `DwgBeneath` continuation.
 
            At this continuation, we have evaluated both arguments of a
-           `DwgBelow` value, and have to package them together.
+           `DwgBeneath` value, and have to package them together.
         -}
-        ( Fine topSvgs, (KontBelow2 bottomSvgs susEnv) :: _ ) ->
+        ( Fine topSvgs, (KontBeneath2 bottomSvgs susEnv) :: _ ) ->
             state
                 |> threadEnvr susEnv
                 |> setExpr (Fine <| combineDrawings susEnv topSvgs bottomSvgs)

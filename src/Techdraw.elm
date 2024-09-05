@@ -1,6 +1,6 @@
 module Techdraw exposing
     ( Drawing
-    , empty, path, atop, below
+    , empty, path, atop, beneath
     , fill, fillRule, stroke, strokeWidth, lineCap, lineJoin
     , dashArray, dashOffset
     , transform, translate, rotateDegrees, rotateDegreesAbout
@@ -18,7 +18,7 @@ module Techdraw exposing
 # Creating Drawings
 
 @docs Drawing
-@docs empty, path, atop, below
+@docs empty, path, atop, beneath
 
 
 # Styling Drawings
@@ -104,9 +104,9 @@ atop top bottom =
 The first/bottom drawing is processed first.
 
 -}
-below : Drawing msg -> Drawing msg -> Drawing msg
-below bottom top =
-    Drawing (DwgBelow (unDrawing bottom) (unDrawing top))
+beneath : Drawing msg -> Drawing msg -> Drawing msg
+beneath bottom top =
+    Drawing (DwgBeneath (unDrawing bottom) (unDrawing top))
 
 
 

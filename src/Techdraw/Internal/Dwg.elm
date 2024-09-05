@@ -20,5 +20,5 @@ type Dwg msg
     | DwgStyled StyleAtom (Dwg msg)
     | DwgTransformed AffineTransform (Dwg msg)
     | DwgAtop (Dwg msg) (Dwg msg)
-    | DwgBelow (Dwg msg) (Dwg msg)
+    | DwgBeneath (Dwg msg) (Dwg msg)
     | DwgEventHandler (EventHandler msg) (Dwg msg)

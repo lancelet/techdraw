@@ -101,7 +101,7 @@ lg2 =
 drawing : Model -> Drawing Msg
 drawing (Model model) =
     TD.atop
-        (TD.below
+        (TD.beneath
             (TD.path
                 (circle
                     { r = circleRadius
