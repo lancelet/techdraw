@@ -88,8 +88,22 @@ toSvg sizing =
 {-| Produce final HTML after running the state machine to completion.
 -}
 produceHtml : Sizing -> StateMachineResult msg -> ToSvgResult msg
-produceHtml sizing (StateMachineResult svgs warnings) =
-    ToSvgResult (TypedSvg.svg (sizingToSvg sizing) svgs) warnings
+produceHtml sizing (StateMachineResult result) =
+    ToSvgResult
+        (TypedSvg.svg
+            (sizingToSvg sizing ++ htmlEventHandlers result.envr)
+            result.childSvgs
+        )
+        (Env.getWarnings result.envr)
+
+
+{-| Produce HTML event handlers from the host event handlers list.
+-}
+htmlEventHandlers : Env msg -> List (Attribute msg)
+htmlEventHandlers env =
+    eventHandlersToSvgAttrs
+        (Env.getCSysDict env)
+        (Env.getHostEventHandlers env)
 
 
 {-| Convert all `Sizing` parameters to attributes on an SVG element.
@@ -145,7 +159,10 @@ loopTailRecursive state =
 {-| Final result of running the state machine.
 -}
 type StateMachineResult msg
-    = StateMachineResult (List (Svg msg)) (List Warning)
+    = StateMachineResult
+        { childSvgs : List (Svg msg)
+        , envr : Env msg
+        }
 
 
 {-| Expression in the state machine.
@@ -196,21 +213,14 @@ extractIfDone state =
     case ( state.expr, state.kont ) of
         ( Fine svgs, [] ) ->
             Just <|
-                prependDefs state <|
-                    StateMachineResult svgs (Env.getWarnings state.envr)
+                StateMachineResult
+                    { childSvgs =
+                        (Env.getDefs state.envr |> Defs.toSvg) :: svgs
+                    , envr = state.envr
+                    }
 
         _ ->
             Nothing
-
-
-{-| Convert `Defs` from the environment into a `<defs>` SVG element and
-prepend it onto the `StateMachineResult`.
--}
-prependDefs : State msg -> StateMachineResult msg -> StateMachineResult msg
-prependDefs state (StateMachineResult svgs warnings) =
-    StateMachineResult
-        (Defs.toSvg (Env.getDefs state.envr) :: svgs)
-        warnings
 
 
 {-| Step the state machine.
@@ -278,6 +288,12 @@ step state =
             state
                 |> setExpr (Init drawing)
                 |> modEnvr (Env.addEventHandler eventHandler)
+
+        {- Add a host event handler to the environment. -}
+        ( Init (DwgHostEventHandler eventHandler drawing), _ ) ->
+            state
+                |> setExpr (Init drawing)
+                |> modEnvr (Env.addHostEventHandler eventHandler)
 
         {- Tag the current local-to-world coordinate system. -}
         ( Init (DwgTagCSys cSysName drawing), _ ) ->

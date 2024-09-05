@@ -9,6 +9,9 @@ module Techdraw exposing
     , onMouseClick, onMouseContextMenu, onMouseDblClick, onMouseDown
     , onMouseEnter, onMouseLeave, onMouseMove, onMouseOut, onMouseOver
     , onMouseUp
+    , onHostMouseClick, onHostMouseContextMenu, onHostMouseDblClick
+    , onHostMouseDown, onHostMouseEnter, onHostMouseLeave, onHostMouseMove
+    , onHostMouseOut, onHostMouseOver, onHostMouseUp
     , tagCSys
     , toSvg, toSvgWithWarnings
     )
@@ -40,6 +43,9 @@ module Techdraw exposing
 @docs onMouseClick, onMouseContextMenu, onMouseDblClick, onMouseDown
 @docs onMouseEnter, onMouseLeave, onMouseMove, onMouseOut, onMouseOver
 @docs onMouseUp
+@docs onHostMouseClick, onHostMouseContextMenu, onHostMouseDblClick
+@docs onHostMouseDown, onHostMouseEnter, onHostMouseLeave, onHostMouseMove
+@docs onHostMouseOut, onHostMouseOver, onHostMouseUp
 
 
 # Tagging Coordinate Systems
@@ -349,12 +355,104 @@ onMouseUp =
     onMouseEvent Event.MouseUp
 
 
+{-| Add a host event handler to an existing drawing.
+-}
+onHostEvent : EventHandler msg -> Drawing msg -> Drawing msg
+onHostEvent eventHandler =
+    unDrawing >> DwgHostEventHandler eventHandler >> Drawing
+
+
+{-| Helper function ao add a mouse event to the host.
+-}
+onHostMouseEvent :
+    (Event.MouseHandler msg -> EventHandler msg)
+    -> (MouseInfo -> msg)
+    -> Drawing msg
+    -> Drawing msg
+onHostMouseEvent createEventHandler createMsg =
+    onHostEvent (Event.MouseHandler createMsg |> createEventHandler)
+
+
+{-| Add a mouse click handler to the host of an existing drawing.
+-}
+onHostMouseClick : (MouseInfo -> msg) -> Drawing msg -> Drawing msg
+onHostMouseClick =
+    onHostMouseEvent Event.MouseClick
+
+
+{-| Add a mouse context menu handler to the host of an existing drawing.
+-}
+onHostMouseContextMenu : (MouseInfo -> msg) -> Drawing msg -> Drawing msg
+onHostMouseContextMenu =
+    onHostMouseEvent Event.MouseContextMenu
+
+
+{-| Add a mouse double click handler to the host of an existing drawing.
+-}
+onHostMouseDblClick : (MouseInfo -> msg) -> Drawing msg -> Drawing msg
+onHostMouseDblClick =
+    onHostMouseEvent Event.MouseDblClick
+
+
+{-| Add a mouse button down handler to the host of an existing drawing.
+-}
+onHostMouseDown : (MouseInfo -> msg) -> Drawing msg -> Drawing msg
+onHostMouseDown =
+    onHostMouseEvent Event.MouseDown
+
+
+{-| Add a mouse enter handler to the host of an existing drawing.
+-}
+onHostMouseEnter : (MouseInfo -> msg) -> Drawing msg -> Drawing msg
+onHostMouseEnter =
+    onHostMouseEvent Event.MouseEnter
+
+
+{-| Add a mouse leave handler to the host of an existing drawing.
+-}
+onHostMouseLeave : (MouseInfo -> msg) -> Drawing msg -> Drawing msg
+onHostMouseLeave =
+    onHostMouseEvent Event.MouseLeave
+
+
+{-| Add a mouse move event handler to the host of an existing drawing.
+-}
+onHostMouseMove : (MouseInfo -> msg) -> Drawing msg -> Drawing msg
+onHostMouseMove =
+    onHostMouseEvent Event.MouseMove
+
+
+{-| Add a mouse out event handler to the host of an existing drawing.
+-}
+onHostMouseOut : (MouseInfo -> msg) -> Drawing msg -> Drawing msg
+onHostMouseOut =
+    onHostMouseEvent Event.MouseOut
+
+
+{-| Add a mouse over event handler to the host of an existing drawing.
+-}
+onHostMouseOver : (MouseInfo -> msg) -> Drawing msg -> Drawing msg
+onHostMouseOver =
+    onHostMouseEvent Event.MouseOver
+
+
+{-| Add a mouse up event handler to the host of an existing drawing.
+-}
+onHostMouseUp : (MouseInfo -> msg) -> Drawing msg -> Drawing msg
+onHostMouseUp =
+    onHostMouseEvent Event.MouseUp
+
+
 
 ---- Tagging Coordinate Systems -----------------------------------------------
 
 
 {-| Tag the current local-to-world transformation with the supplied
 coordinate system name.
+
+This coordinate system name can be used with later mouse events to retrieve
+coordinates in the named coordinate system.
+
 -}
 tagCSys : CSysName -> Drawing msg -> Drawing msg
 tagCSys cSysName =

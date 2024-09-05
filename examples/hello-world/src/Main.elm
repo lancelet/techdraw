@@ -21,7 +21,6 @@ type Model
         , scaleX : Float
         , scaleY : Float
         , skewX : Float
-        , mouseOverInnerCircle : Bool
         , coords : Maybe P2
         }
 
@@ -34,8 +33,6 @@ type Msg
     | MsgScaleXChanged Float
     | MsgScaleYChanged Float
     | MsgSkewXChanged Float
-    | MsgMouseEnterInner
-    | MsgMouseLeaveInner
     | MsgMouseMove P2
 
 
@@ -48,7 +45,6 @@ init =
         , scaleX = 1
         , scaleY = 1
         , skewX = 0
-        , mouseOverInnerCircle = False
         , coords = Nothing
         }
 
@@ -87,17 +83,11 @@ lg =
         }
 
 
-rectStyle : Model -> Drawing msg -> Drawing msg
-rectStyle (Model model) =
-    if model.mouseOverInnerCircle then
-        TD.fill (Style.Paint Color.darkOrange)
-            >> TD.stroke (Style.Paint Color.black)
-            >> TD.strokeWidth 1.2
-
-    else
-        TD.fill (Style.PaintLinearGradient lg)
-            >> TD.stroke (Style.Paint Color.black)
-            >> TD.strokeWidth 0.8
+rectStyle : Drawing msg -> Drawing msg
+rectStyle =
+    TD.fill (Style.PaintLinearGradient lg)
+        >> TD.stroke (Style.Paint Color.black)
+        >> TD.strokeWidth 0.8
 
 
 rectTransform : Model -> Drawing msg -> Drawing msg
@@ -124,8 +114,6 @@ drawing (Model model) =
                 , ry = 0.2 * circleRadius
                 }
             )
-            |> TD.onMouseEnter (\_ -> MsgMouseEnterInner)
-            |> TD.onMouseLeave (\_ -> MsgMouseLeaveInner)
         , case model.coords of
             Nothing ->
                 TD.empty
@@ -140,9 +128,9 @@ drawing (Model model) =
                     )
         ]
         |> TD.tagCSys (TT.CSysName "original")
-        |> rectStyle (Model model)
+        |> rectStyle
         |> rectTransform (Model model)
-        |> TD.onMouseMove
+        |> TD.onHostMouseMove
             (\(MouseInfo mouseInfo) ->
                 mouseInfo.pointIn (TT.CSysName "original") |> MsgMouseMove
             )
@@ -255,12 +243,6 @@ update message (Model model) =
 
         MsgSkewXChanged angleDeg ->
             Model { model | skewX = angleDeg }
-
-        MsgMouseEnterInner ->
-            Model { model | mouseOverInnerCircle = True }
-
-        MsgMouseLeaveInner ->
-            Model { model | mouseOverInnerCircle = False }
 
         MsgMouseMove p ->
             Model { model | coords = Just p }

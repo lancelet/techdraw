@@ -9,6 +9,7 @@ module Techdraw.Internal.Svg.Env exposing
     , concatTransform
     , getEventHandlers, hasPendingEventHandlers, addEventHandler
     , removeEventHandlers
+    , addHostEventHandler, getHostEventHandlers
     , tagCSys, getCSysDict
     , init
     , thread
@@ -26,6 +27,7 @@ module Techdraw.Internal.Svg.Env exposing
 @docs concatTransform
 @docs getEventHandlers, hasPendingEventHandlers, addEventHandler
 @docs removeEventHandlers
+@docs addHostEventHandler, getHostEventHandlers
 @docs tagCSys, getCSysDict
 @docs init
 @docs thread
@@ -52,6 +54,7 @@ type Env msg
         , style : Style
         , defs : Defs
         , eventHandlers : List (EventHandlerCapturedEnv msg)
+        , hostEventHandlers : List (EventHandlerCapturedEnv msg)
         , cSysDict : CSysDict
         }
 
@@ -166,6 +169,31 @@ removeEventHandlers (Env oldEnv) =
         }
 
 
+{-| Prepend a host event handler to the environment.
+-}
+addHostEventHandler : EventHandler msg -> Env msg -> Env msg
+addHostEventHandler eventHandler (Env oldEnv) =
+    let
+        handlerWithCapturedEnv =
+            EventHandlerCapturedEnv
+                { eventHandler = eventHandler
+                , localToWorld = oldEnv.localToWorld
+                }
+    in
+    Env
+        { oldEnv
+            | hostEventHandlers =
+                handlerWithCapturedEnv :: oldEnv.hostEventHandlers
+        }
+
+
+{-| Return the host event handlers from the environment.
+-}
+getHostEventHandlers : Env msg -> List (EventHandlerCapturedEnv msg)
+getHostEventHandlers (Env env) =
+    env.hostEventHandlers
+
+
 {-| Tag the current local-to-world coordinate system in the dictionary of
 coordinate system names.
 -}
@@ -212,6 +240,7 @@ init sizing =
         , style = Style.inheritAll
         , defs = Defs.empty
         , eventHandlers = []
+        , hostEventHandlers = []
         , cSysDict = CSysDict.empty
         }
 
@@ -259,6 +288,7 @@ thread (Env ancestor) (Env next) =
         , style = ancestor.style
         , defs = next.defs
         , eventHandlers = ancestor.eventHandlers
+        , hostEventHandlers = next.hostEventHandlers
         , cSysDict = next.cSysDict
         }
 

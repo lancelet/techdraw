@@ -23,4 +23,5 @@ type Dwg msg
     | DwgAtop (Dwg msg) (Dwg msg)
     | DwgBeneath (Dwg msg) (Dwg msg)
     | DwgEventHandler (EventHandler msg) (Dwg msg)
+    | DwgHostEventHandler (EventHandler msg) (Dwg msg)
     | DwgTagCSys CSysName (Dwg msg)
