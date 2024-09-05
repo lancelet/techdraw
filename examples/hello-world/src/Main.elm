@@ -6,11 +6,11 @@ import Html exposing (Html)
 import Html.Attributes as HA
 import Html.Events as HE
 import Techdraw as TD exposing (Drawing)
-import Techdraw.Math as Math exposing (p2)
+import Techdraw.Event exposing (MouseInfo(..))
+import Techdraw.Math as Math exposing (P2, p2)
 import Techdraw.Shapes.Simple exposing (circle, rectRounded)
 import Techdraw.Style as Style exposing (LinearGradient, Stop(..))
 import Techdraw.Types as TT
-import TypedSvg.Attributes exposing (rotate)
 
 
 type Model
@@ -22,6 +22,7 @@ type Model
         , scaleY : Float
         , skewX : Float
         , mouseOverInnerCircle : Bool
+        , coords : Maybe P2
         }
 
 
@@ -33,8 +34,9 @@ type Msg
     | MsgScaleXChanged Float
     | MsgScaleYChanged Float
     | MsgSkewXChanged Float
-    | MsgMouseEnter
-    | MsgMouseLeave
+    | MsgMouseEnterInner
+    | MsgMouseLeaveInner
+    | MsgMouseMove P2
 
 
 init : Model
@@ -47,6 +49,7 @@ init =
         , scaleY = 1
         , skewX = 0
         , mouseOverInnerCircle = False
+        , coords = Nothing
         }
 
 
@@ -84,51 +87,34 @@ lg =
         }
 
 
-lg2 : LinearGradient
-lg2 =
-    Style.linearGradient
-        { start = p2 (halfWidth - circleRadius) (halfHeight + circleRadius)
-        , end = p2 (halfWidth + circleRadius) (halfHeight - circleRadius)
-        , transform = Math.affIdentity
-        , gradient =
-            Style.gradient
-                [ Stop 0 Color.purple
-                , Stop 1 Color.green
-                ]
-        }
+rectStyle : Model -> Drawing msg -> Drawing msg
+rectStyle (Model model) =
+    if model.mouseOverInnerCircle then
+        TD.fill (Style.Paint Color.darkOrange)
+            >> TD.stroke (Style.Paint Color.black)
+            >> TD.strokeWidth 1.2
+
+    else
+        TD.fill (Style.PaintLinearGradient lg)
+            >> TD.stroke (Style.Paint Color.black)
+            >> TD.strokeWidth 0.8
+
+
+rectTransform : Model -> Drawing msg -> Drawing msg
+rectTransform (Model model) =
+    (TD.translate (Math.v2 -halfWidth -halfHeight)
+        >> TD.scale model.scaleX model.scaleY
+        >> TD.skewXDegrees model.skewX
+        >> TD.translate (Math.v2 halfWidth halfHeight)
+    )
+        >> TD.translate (Math.v2 model.translateX model.translateY)
+        >> TD.rotateDegreesAbout model.rotate (Math.p2 halfWidth halfHeight)
 
 
 drawing : Model -> Drawing Msg
 drawing (Model model) =
-    TD.atop
-        (TD.beneath
-            (TD.path
-                (circle
-                    { r = circleRadius
-                    , cx = drawingWidth / 2
-                    , cy = drawingHeight / 2
-                    }
-                )
-            )
-            (TD.path
-                (circle
-                    { r = circleRadius / 3
-                    , cx = drawingWidth / 2
-                    , cy = drawingHeight / 2
-                    }
-                )
-                |> TD.fill
-                    (if model.mouseOverInnerCircle then
-                        Style.Paint Color.darkOrange
-
-                     else
-                        Style.Paint Color.darkRed
-                    )
-                |> TD.onMouseEnter (\_ -> MsgMouseEnter)
-                |> TD.onMouseLeave (\_ -> MsgMouseLeave)
-            )
-        )
-        (TD.path
+    TD.stack TT.BottomToTop
+        [ TD.path
             (rectRounded
                 { x = halfWidth - circleRadius
                 , y = halfHeight - circleRadius
@@ -138,19 +124,28 @@ drawing (Model model) =
                 , ry = 0.2 * circleRadius
                 }
             )
-            |> TD.fill (Style.PaintLinearGradient lg2)
-        )
-        |> TD.fill (Style.PaintLinearGradient lg)
-        |> TD.stroke (Style.Paint Color.black)
-        |> TD.strokeWidth 0.2
-        |> (-- Scale and Skew about the middle of the drawing
-            TD.translate (Math.v2 -halfWidth -halfHeight)
-                >> TD.scale model.scaleX model.scaleY
-                >> TD.skewXDegrees model.skewX
-                >> TD.translate (Math.v2 halfWidth halfHeight)
-           )
-        |> TD.translate (Math.v2 model.translateX model.translateY)
-        |> TD.rotateDegreesAbout model.rotate (Math.p2 halfWidth halfHeight)
+            |> TD.onMouseEnter (\_ -> MsgMouseEnterInner)
+            |> TD.onMouseLeave (\_ -> MsgMouseLeaveInner)
+        , case model.coords of
+            Nothing ->
+                TD.empty
+
+            Just p ->
+                TD.path
+                    (circle
+                        { cx = Math.p2x p
+                        , cy = Math.p2y p
+                        , r = 0.1 * circleRadius
+                        }
+                    )
+        ]
+        |> TD.tagCSys (TT.CSysName "original")
+        |> rectStyle (Model model)
+        |> rectTransform (Model model)
+        |> TD.onMouseMove
+            (\(MouseInfo mouseInfo) ->
+                mouseInfo.pointIn (TT.CSysName "original") |> MsgMouseMove
+            )
 
 
 view : Model -> Html Msg
@@ -261,11 +256,14 @@ update message (Model model) =
         MsgSkewXChanged angleDeg ->
             Model { model | skewX = angleDeg }
 
-        MsgMouseEnter ->
+        MsgMouseEnterInner ->
             Model { model | mouseOverInnerCircle = True }
 
-        MsgMouseLeave ->
+        MsgMouseLeaveInner ->
             Model { model | mouseOverInnerCircle = False }
+
+        MsgMouseMove p ->
+            Model { model | coords = Just p }
 
 
 main =

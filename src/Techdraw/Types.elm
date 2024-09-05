@@ -4,6 +4,7 @@ module Techdraw.Types exposing
     , sizingGetViewBox, sizingGetContainerSize
     , containerSizeGetWidth, containerSizeGetHeight
     , viewBoxGetXMin, viewBoxGetYMin, viewBoxGetWidth, viewBoxGetHeight
+    , Order(..)
     , CSysName(..)
     )
 
@@ -17,6 +18,11 @@ module Techdraw.Types exposing
 @docs sizingGetViewBox, sizingGetContainerSize
 @docs containerSizeGetWidth, containerSizeGetHeight
 @docs viewBoxGetXMin, viewBoxGetYMin, viewBoxGetWidth, viewBoxGetHeight
+
+
+# Drawing Order
+
+@docs Order
 
 
 # Names
@@ -171,6 +177,18 @@ viewBoxGetWidth (ViewBox vb) =
 viewBoxGetHeight : ViewBox -> Float
 viewBoxGetHeight (ViewBox vb) =
     vb.height
+
+
+
+---- Drawing Order ------------------------------------------------------------
+
+
+{-| When processing a list of drawings, do they appear in top-to-bottom order,
+or bottom-to-top order?
+-}
+type Order
+    = TopToBottom
+    | BottomToTop
 
 
 

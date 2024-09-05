@@ -19,7 +19,8 @@ import Techdraw.Event
         , MouseHandler(..)
         , MouseInfo(..)
         )
-import Techdraw.Internal.Svg.Env as Env exposing (Env)
+import Techdraw.Internal.CSysDict as CSysDict exposing (CSysDict)
+import Techdraw.Internal.Svg.Env exposing (EventHandlerCapturedEnv(..))
 import Techdraw.Math as Math exposing (AffineTransform, P2)
 import TypedSvg.Core exposing (Attribute)
 
@@ -27,51 +28,59 @@ import TypedSvg.Core exposing (Attribute)
 {-| Convert a list of event handlers to a list of SVG attributes.
 -}
 eventHandlersToSvgAttrs :
-    Env msg
-    -> List (EventHandler msg)
+    CSysDict
+    -> List (EventHandlerCapturedEnv msg)
     -> List (Attribute msg)
-eventHandlersToSvgAttrs env =
-    List.map (eventHandlerToSvgAttr (Env.getLocalToWorld env))
+eventHandlersToSvgAttrs cSysDict =
+    List.map (eventHandlerToSvgAttr cSysDict)
 
 
 {-| Convert an `EventHandler msg` to an `Attribute msg` using appropriate
 environmental information.
 -}
 eventHandlerToSvgAttr :
-    AffineTransform
-    -> EventHandler msg
+    CSysDict
+    -> EventHandlerCapturedEnv msg
     -> Attribute msg
-eventHandlerToSvgAttr localToWorld eventHandler =
-    case eventHandler of
+eventHandlerToSvgAttr cSysDict eventHandlerWithCapturedEnv =
+    let
+        (EventHandlerCapturedEnv ecap) =
+            eventHandlerWithCapturedEnv
+
+        processMouseHandler : String -> MouseHandler msg -> Attribute msg
+        processMouseHandler name =
+            mouseHandlerToSvgAttr name ecap.localToWorld cSysDict
+    in
+    case ecap.eventHandler of
         MouseClick mouseHandler ->
-            mouseHandlerToSvgAttr "click" localToWorld mouseHandler
+            processMouseHandler "click" mouseHandler
 
         MouseContextMenu mouseHandler ->
-            mouseHandlerToSvgAttr "contextmenu" localToWorld mouseHandler
+            processMouseHandler "contextmenu" mouseHandler
 
         MouseDblClick mouseHandler ->
-            mouseHandlerToSvgAttr "dblclick" localToWorld mouseHandler
+            processMouseHandler "dblclick" mouseHandler
 
         MouseDown mouseHandler ->
-            mouseHandlerToSvgAttr "mousedown" localToWorld mouseHandler
+            processMouseHandler "mousedown" mouseHandler
 
         MouseEnter mouseHandler ->
-            mouseHandlerToSvgAttr "mouseenter" localToWorld mouseHandler
+            processMouseHandler "mouseenter" mouseHandler
 
         MouseLeave mouseHandler ->
-            mouseHandlerToSvgAttr "mouseleave" localToWorld mouseHandler
+            processMouseHandler "mouseleave" mouseHandler
 
         MouseMove mouseHandler ->
-            mouseHandlerToSvgAttr "mousemove" localToWorld mouseHandler
+            processMouseHandler "mousemove" mouseHandler
 
         MouseOut mouseHandler ->
-            mouseHandlerToSvgAttr "mouseout" localToWorld mouseHandler
+            processMouseHandler "mouseout" mouseHandler
 
         MouseOver mouseHandler ->
-            mouseHandlerToSvgAttr "mouseover" localToWorld mouseHandler
+            processMouseHandler "mouseover" mouseHandler
 
         MouseUp mouseHandler ->
-            mouseHandlerToSvgAttr "mouseup" localToWorld mouseHandler
+            processMouseHandler "mouseup" mouseHandler
 
 
 {-| Convert a `MouseHandler msg` to an `Attribute msg` using appropriate
@@ -80,12 +89,13 @@ environmental information.
 mouseHandlerToSvgAttr :
     String
     -> AffineTransform
+    -> CSysDict
     -> MouseHandler msg
     -> Attribute msg
-mouseHandlerToSvgAttr eventName localToWorld mouseHandler =
+mouseHandlerToSvgAttr eventName localToWorld cSysDict mouseHandler =
     HtmlEvents.on
         eventName
-        (mouseHandlerToMessageDecoder localToWorld mouseHandler)
+        (mouseHandlerToMessageDecoder localToWorld cSysDict mouseHandler)
 
 
 
@@ -101,20 +111,17 @@ create the pointIn function.
 -}
 mouseHandlerToMessageDecoder :
     AffineTransform
+    -> CSysDict
     -> MouseHandler msg
     -> Decoder msg
-mouseHandlerToMessageDecoder localToWorld (MouseHandler mouseInfoToMsg) =
-    decodeMouseInfo localToWorld |> D.map mouseInfoToMsg
+mouseHandlerToMessageDecoder localToWorld cSysDict (MouseHandler toMsg) =
+    decodeMouseInfo localToWorld cSysDict |> D.map toMsg
 
 
 {-| Decode mouse information for an event handler.
-
-TODO: This function will require information about the coordinate systems to
-create the pointIn function.
-
 -}
-decodeMouseInfo : AffineTransform -> Decoder MouseInfo
-decodeMouseInfo localToWorld =
+decodeMouseInfo : AffineTransform -> CSysDict -> Decoder MouseInfo
+decodeMouseInfo localToWorld cSysDict =
     D.map3
         (\offsetP2 buttons modifiers ->
             MouseInfo
@@ -125,7 +132,7 @@ decodeMouseInfo localToWorld =
                         offsetP2
                 , buttons = buttons
                 , modifiers = modifiers
-                , pointIn = \_ -> Math.p2 0 0 -- TODO: Use CSys lookup
+                , pointIn = \name -> CSysDict.inCSys cSysDict name offsetP2
                 }
         )
         decodeOffsetP2

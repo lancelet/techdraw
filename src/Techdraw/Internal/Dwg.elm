@@ -10,6 +10,7 @@ import Techdraw.Event exposing (EventHandler)
 import Techdraw.Internal.StyleAtom exposing (StyleAtom)
 import Techdraw.Math exposing (AffineTransform)
 import Techdraw.Path exposing (Path)
+import Techdraw.Types exposing (CSysName)
 
 
 {-| Internal drawing type.
@@ -22,3 +23,4 @@ type Dwg msg
     | DwgAtop (Dwg msg) (Dwg msg)
     | DwgBeneath (Dwg msg) (Dwg msg)
     | DwgEventHandler (EventHandler msg) (Dwg msg)
+    | DwgTagCSys CSysName (Dwg msg)

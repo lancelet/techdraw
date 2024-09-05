@@ -24,7 +24,6 @@ This module implements a largely non-recursive state machine to evaluate a
 
 import Html exposing (Attribute, Html)
 import Html.Attributes as HtmlA
-import Techdraw.Event exposing (EventHandler)
 import Techdraw.Internal.Dwg exposing (Dwg(..))
 import Techdraw.Internal.Svg.Defs as Defs
 import Techdraw.Internal.Svg.Env as Env exposing (Env, Warning)
@@ -238,7 +237,9 @@ step state =
                 ( sAttrs, state1 ) =
                     styleAttrs state
             in
-            state1 |> setExpr (Fine (pathToSvg state.envr sAttrs path))
+            state1
+                |> setExpr (Fine (pathToSvg state.envr sAttrs path))
+                |> modEnvr Env.removeEventHandlers
 
         {- Update the style in the environment. -}
         ( Init (DwgStyled atom drawing), _ ) ->
@@ -255,20 +256,34 @@ step state =
         {- Draw the first drawing on top of the second. -}
         ( Init (DwgAtop topDrawing bottomDrawing), _ ) ->
             state
-                |> setExpr (Init topDrawing)
+                -- Suspend the bottom drawing in a coninuation, keeping the
+                -- event handlers there.
                 |> suspendKont (KontAtop1 bottomDrawing)
+                -- Remove the event handlers and process the top drawing.
+                |> modEnvr Env.removeEventHandlers
+                |> setExpr (Init topDrawing)
 
         {- Draw the first drawing beneath the second. -}
         ( Init (DwgBeneath bottomDrawing topDrawing), _ ) ->
             state
-                |> setExpr (Init bottomDrawing)
+                -- Suspend the top drawing in a continuation, keeping the
+                -- event handlers there.
                 |> suspendKont (KontBeneath1 topDrawing)
+                -- Remove the event handlers and process the bottom drawing.
+                |> modEnvr Env.removeEventHandlers
+                |> setExpr (Init bottomDrawing)
 
         {- Add a pending event handler to the environment. -}
         ( Init (DwgEventHandler eventHandler drawing), _ ) ->
             state
                 |> setExpr (Init drawing)
                 |> modEnvr (Env.addEventHandler eventHandler)
+
+        {- Tag the current local-to-world coordinate system. -}
+        ( Init (DwgTagCSys cSysName drawing), _ ) ->
+            state
+                |> setExpr (Init drawing)
+                |> modEnvr (Env.tagCSys cSysName)
 
         {- ----------------------------------------------------------------- -}
         {- Continuation states -}
@@ -280,10 +295,11 @@ step state =
         -}
         ( Fine topSvgs, (KontAtop1 bottomDrawing susEnv) :: _ ) ->
             state
-                |> threadEnvr susEnv
-                |> setExpr (Init bottomDrawing)
                 |> popKont
+                |> threadEnvr susEnv
                 |> suspendKont (KontAtop2 topSvgs)
+                |> modEnvr Env.removeEventHandlers
+                |> setExpr (Init bottomDrawing)
 
         {- Process the second `DwgAtop` continuation.
 
@@ -292,9 +308,9 @@ step state =
         -}
         ( Fine bottomSvgs, (KontAtop2 topSvgs susEnv) :: _ ) ->
             state
+                |> popKont
                 |> threadEnvr susEnv
                 |> setExpr (Fine <| combineDrawings susEnv topSvgs bottomSvgs)
-                |> popKont
 
         {- Process the first `DwgBeneath` continuation.
 
@@ -303,10 +319,11 @@ step state =
         -}
         ( Fine bottomSvgs, (KontBeneath1 topDrawing susEnv) :: _ ) ->
             state
-                |> threadEnvr susEnv
-                |> setExpr (Init topDrawing)
                 |> popKont
+                |> threadEnvr susEnv
                 |> suspendKont (KontBeneath2 bottomSvgs)
+                |> modEnvr Env.removeEventHandlers
+                |> setExpr (Init topDrawing)
 
         {- Process the second `DwgBeneath` continuation.
 
@@ -315,9 +332,9 @@ step state =
         -}
         ( Fine topSvgs, (KontBeneath2 bottomSvgs susEnv) :: _ ) ->
             state
+                |> popKont
                 |> threadEnvr susEnv
                 |> setExpr (Fine <| combineDrawings susEnv topSvgs bottomSvgs)
-                |> popKont
 
 
 {-| Set the expression in the state.
@@ -404,12 +421,14 @@ combineDrawings env topSvgs bottomSvgs =
 -}
 attachPendingEvents : Env msg -> List (Svg msg) -> List (Svg msg)
 attachPendingEvents env svgs =
-    let
-        handlers =
-            Env.getEventHandlers env
-    in
-    if List.isEmpty handlers then
-        svgs
+    if Env.hasPendingEventHandlers env then
+        [ TypedSvg.g
+            (eventHandlersToSvgAttrs
+                (Env.getCSysDict env)
+                (Env.getEventHandlers env)
+            )
+            svgs
+        ]
 
     else
-        [ TypedSvg.g (eventHandlersToSvgAttrs env handlers) svgs ]
+        svgs

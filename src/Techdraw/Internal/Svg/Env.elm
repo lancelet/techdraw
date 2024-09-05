@@ -1,12 +1,15 @@
 module Techdraw.Internal.Svg.Env exposing
     ( Env
     , Warning
+    , EventHandlerCapturedEnv(..)
     , unWarning
     , getLocalToWorld, getWarnings, getNFixDigits, getStyle
     , modStyle, applyStyleAtom
     , getDefs, modDefs
     , concatTransform
-    , getEventHandlers, addEventHandler
+    , getEventHandlers, hasPendingEventHandlers, addEventHandler
+    , removeEventHandlers
+    , tagCSys, getCSysDict
     , init
     , thread
     )
@@ -15,24 +18,28 @@ module Techdraw.Internal.Svg.Env exposing
 
 @docs Env
 @docs Warning
+@docs EventHandlerCapturedEnv
 @docs unWarning
 @docs getLocalToWorld, getWarnings, getNFixDigits, getStyle
 @docs modStyle, applyStyleAtom
 @docs getDefs, modDefs
 @docs concatTransform
-@docs getEventHandlers, addEventHandler
+@docs getEventHandlers, hasPendingEventHandlers, addEventHandler
+@docs removeEventHandlers
+@docs tagCSys, getCSysDict
 @docs init
 @docs thread
 
 -}
 
 import Techdraw.Event exposing (EventHandler)
+import Techdraw.Internal.CSysDict as CSysDict exposing (CSysDict)
 import Techdraw.Internal.StyleAtom as StyleAtom exposing (StyleAtom)
 import Techdraw.Internal.Svg.Defs as Defs exposing (Defs)
 import Techdraw.Internal.Svg.Path exposing (NFixDigits(..))
 import Techdraw.Math as Math exposing (AffineTransform)
 import Techdraw.Style as Style exposing (Style)
-import Techdraw.Types as T exposing (Sizing(..))
+import Techdraw.Types as T exposing (CSysName, Sizing(..))
 
 
 {-| Environment.
@@ -44,7 +51,8 @@ type Env msg
         , nFixDigits : NFixDigits
         , style : Style
         , defs : Defs
-        , eventHandlers : List (EventHandler msg)
+        , eventHandlers : List (EventHandlerCapturedEnv msg)
+        , cSysDict : CSysDict
         }
 
 
@@ -117,9 +125,16 @@ concatTransform childToParent (Env oldEnv) =
         }
 
 
+{-| Check if the environment has pending event handlers.
+-}
+hasPendingEventHandlers : Env msg -> Bool
+hasPendingEventHandlers (Env env) =
+    List.isEmpty env.eventHandlers |> not
+
+
 {-| Return the list of event handlers from the environment.
 -}
-getEventHandlers : Env msg -> List (EventHandler msg)
+getEventHandlers : Env msg -> List (EventHandlerCapturedEnv msg)
 getEventHandlers (Env env) =
     env.eventHandlers
 
@@ -128,10 +143,49 @@ getEventHandlers (Env env) =
 -}
 addEventHandler : EventHandler msg -> Env msg -> Env msg
 addEventHandler eventHandler (Env oldEnv) =
+    let
+        handlerWithCapturedEnv =
+            EventHandlerCapturedEnv
+                { eventHandler = eventHandler
+                , localToWorld = oldEnv.localToWorld
+                }
+    in
     Env
         { oldEnv
-            | eventHandlers = eventHandler :: oldEnv.eventHandlers
+            | eventHandlers = handlerWithCapturedEnv :: oldEnv.eventHandlers
         }
+
+
+{-| Remove all event handlers.
+-}
+removeEventHandlers : Env msg -> Env msg
+removeEventHandlers (Env oldEnv) =
+    Env
+        { oldEnv
+            | eventHandlers = []
+        }
+
+
+{-| Tag the current local-to-world coordinate system in the dictionary of
+coordinate system names.
+-}
+tagCSys : CSysName -> Env msg -> Env msg
+tagCSys name (Env oldEnv) =
+    Env
+        { oldEnv
+            | cSysDict =
+                CSysDict.insertLocalToWorld
+                    name
+                    oldEnv.localToWorld
+                    oldEnv.cSysDict
+        }
+
+
+{-| Return the coordinate system dictionary from the environment.
+-}
+getCSysDict : Env msg -> CSysDict
+getCSysDict (Env env) =
+    env.cSysDict
 
 
 {-| Warning string.
@@ -158,6 +212,7 @@ init sizing =
         , style = Style.inheritAll
         , defs = Defs.empty
         , eventHandlers = []
+        , cSysDict = CSysDict.empty
         }
 
 
@@ -204,4 +259,15 @@ thread (Env ancestor) (Env next) =
         , style = ancestor.style
         , defs = next.defs
         , eventHandlers = ancestor.eventHandlers
+        , cSysDict = next.cSysDict
+        }
+
+
+{-| Event handler that has captured relevant parts of its current
+environment.
+-}
+type EventHandlerCapturedEnv msg
+    = EventHandlerCapturedEnv
+        { eventHandler : EventHandler msg
+        , localToWorld : AffineTransform
         }

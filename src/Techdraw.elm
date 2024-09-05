@@ -1,6 +1,6 @@
 module Techdraw exposing
     ( Drawing
-    , empty, path, atop, beneath
+    , empty, path, atop, beneath, stack
     , fill, fillRule, stroke, strokeWidth, lineCap, lineJoin
     , dashArray, dashOffset
     , transform, translate, rotateDegrees, rotateDegreesAbout
@@ -9,6 +9,7 @@ module Techdraw exposing
     , onMouseClick, onMouseContextMenu, onMouseDblClick, onMouseDown
     , onMouseEnter, onMouseLeave, onMouseMove, onMouseOut, onMouseOver
     , onMouseUp
+    , tagCSys
     , toSvg, toSvgWithWarnings
     )
 
@@ -18,7 +19,7 @@ module Techdraw exposing
 # Creating Drawings
 
 @docs Drawing
-@docs empty, path, atop, beneath
+@docs empty, path, atop, beneath, stack
 
 
 # Styling Drawings
@@ -41,6 +42,11 @@ module Techdraw exposing
 @docs onMouseUp
 
 
+# Tagging Coordinate Systems
+
+@docs tagCSys
+
+
 # Converting Drawings to SVG
 
 @docs toSvg, toSvgWithWarnings
@@ -55,7 +61,7 @@ import Techdraw.Internal.Svg.Machine as DwgMachine
 import Techdraw.Math as Math exposing (AffineTransform, P2, V2)
 import Techdraw.Path exposing (Path)
 import Techdraw.Style as Style
-import Techdraw.Types exposing (Sizing)
+import Techdraw.Types exposing (CSysName, Order(..), Sizing)
 
 
 
@@ -107,6 +113,18 @@ The first/bottom drawing is processed first.
 beneath : Drawing msg -> Drawing msg -> Drawing msg
 beneath bottom top =
     Drawing (DwgBeneath (unDrawing bottom) (unDrawing top))
+
+
+{-| Stack drawings in either a bottom-to-top or top-to-bottom order.
+-}
+stack : Order -> List (Drawing msg) -> Drawing msg
+stack order =
+    case order of
+        TopToBottom ->
+            List.foldl beneath empty
+
+        BottomToTop ->
+            List.foldl atop empty
 
 
 
@@ -329,6 +347,18 @@ onMouseOver =
 onMouseUp : (MouseInfo -> msg) -> Drawing msg -> Drawing msg
 onMouseUp =
     onMouseEvent Event.MouseUp
+
+
+
+---- Tagging Coordinate Systems -----------------------------------------------
+
+
+{-| Tag the current local-to-world transformation with the supplied
+coordinate system name.
+-}
+tagCSys : CSysName -> Drawing msg -> Drawing msg
+tagCSys cSysName =
+    unDrawing >> DwgTagCSys cSysName >> Drawing
 
 
 

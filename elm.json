@@ -14,6 +14,7 @@
     "Techdraw.Types",
     "Techdraw.Shapes.Simple",
     "Techdraw.Shapes.Spring",
+    "Techdraw.Internal.CSysDict",
     "Techdraw.Internal.Dwg",
     "Techdraw.Internal.Hash",
     "Techdraw.Internal.StyleAtom",
