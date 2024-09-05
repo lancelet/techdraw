@@ -21,6 +21,7 @@ type Model
         , scaleX : Float
         , scaleY : Float
         , skewX : Float
+        , mouseOverInnerCircle : Bool
         }
 
 
@@ -32,6 +33,8 @@ type Msg
     | MsgScaleXChanged Float
     | MsgScaleYChanged Float
     | MsgSkewXChanged Float
+    | MsgMouseEnter
+    | MsgMouseLeave
 
 
 init : Model
@@ -43,6 +46,7 @@ init =
         , scaleX = 1
         , scaleY = 1
         , skewX = 0
+        , mouseOverInnerCircle = False
         }
 
 
@@ -94,7 +98,7 @@ lg2 =
         }
 
 
-drawing : Model -> Drawing msg
+drawing : Model -> Drawing Msg
 drawing (Model model) =
     TD.atop
         (TD.below
@@ -113,7 +117,15 @@ drawing (Model model) =
                     , cy = drawingHeight / 2
                     }
                 )
-                |> TD.fill (Style.Paint Color.darkRed)
+                |> TD.fill
+                    (if model.mouseOverInnerCircle then
+                        Style.Paint Color.darkOrange
+
+                     else
+                        Style.Paint Color.darkRed
+                    )
+                |> TD.onMouseEnter (\_ -> MsgMouseEnter)
+                |> TD.onMouseLeave (\_ -> MsgMouseLeave)
             )
         )
         (TD.path
@@ -248,6 +260,12 @@ update message (Model model) =
 
         MsgSkewXChanged angleDeg ->
             Model { model | skewX = angleDeg }
+
+        MsgMouseEnter ->
+            Model { model | mouseOverInnerCircle = True }
+
+        MsgMouseLeave ->
+            Model { model | mouseOverInnerCircle = False }
 
 
 main =

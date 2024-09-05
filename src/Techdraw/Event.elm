@@ -33,7 +33,7 @@ type EventHandler msg
     | MouseUp (MouseHandler msg)
 
 
-{-| Mouse event handler. -
+{-| Mouse event handler.
 -}
 type MouseHandler msg
     = MouseHandler (MouseInfo -> msg)

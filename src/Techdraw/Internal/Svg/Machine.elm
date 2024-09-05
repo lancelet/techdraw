@@ -412,4 +412,4 @@ attachPendingEvents env svgs =
         svgs
 
     else
-        [ TypedSvg.g (eventHandlersToSvgAttrs handlers) svgs ]
+        [ TypedSvg.g (eventHandlersToSvgAttrs env handlers) svgs ]

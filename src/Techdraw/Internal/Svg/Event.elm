@@ -7,6 +7,7 @@ module Techdraw.Internal.Svg.Event exposing (eventHandlersToSvgAttrs)
 -}
 
 import Bitwise exposing (and, shiftLeftBy)
+import Html.Events as HtmlEvents
 import Json.Decode as D exposing (Decoder)
 import Techdraw.Event
     exposing
@@ -15,21 +16,95 @@ import Techdraw.Event
         , EventHandler(..)
         , KState(..)
         , Modifiers
+        , MouseHandler(..)
         , MouseInfo(..)
         )
+import Techdraw.Internal.Svg.Env as Env exposing (Env)
 import Techdraw.Math as Math exposing (AffineTransform, P2)
 import TypedSvg.Core exposing (Attribute)
 
 
 {-| Convert a list of event handlers to a list of SVG attributes.
 -}
-eventHandlersToSvgAttrs : List (EventHandler msg) -> List (Attribute msg)
-eventHandlersToSvgAttrs =
-    Debug.todo "TODO"
+eventHandlersToSvgAttrs :
+    Env msg
+    -> List (EventHandler msg)
+    -> List (Attribute msg)
+eventHandlersToSvgAttrs env =
+    List.map (eventHandlerToSvgAttr (Env.getLocalToWorld env))
+
+
+{-| Convert an `EventHandler msg` to an `Attribute msg` using appropriate
+environmental information.
+-}
+eventHandlerToSvgAttr :
+    AffineTransform
+    -> EventHandler msg
+    -> Attribute msg
+eventHandlerToSvgAttr localToWorld eventHandler =
+    case eventHandler of
+        MouseClick mouseHandler ->
+            mouseHandlerToSvgAttr "click" localToWorld mouseHandler
+
+        MouseContextMenu mouseHandler ->
+            mouseHandlerToSvgAttr "contextmenu" localToWorld mouseHandler
+
+        MouseDblClick mouseHandler ->
+            mouseHandlerToSvgAttr "dblclick" localToWorld mouseHandler
+
+        MouseDown mouseHandler ->
+            mouseHandlerToSvgAttr "mousedown" localToWorld mouseHandler
+
+        MouseEnter mouseHandler ->
+            mouseHandlerToSvgAttr "mouseenter" localToWorld mouseHandler
+
+        MouseLeave mouseHandler ->
+            mouseHandlerToSvgAttr "mouseleave" localToWorld mouseHandler
+
+        MouseMove mouseHandler ->
+            mouseHandlerToSvgAttr "mousemove" localToWorld mouseHandler
+
+        MouseOut mouseHandler ->
+            mouseHandlerToSvgAttr "mouseout" localToWorld mouseHandler
+
+        MouseOver mouseHandler ->
+            mouseHandlerToSvgAttr "mouseover" localToWorld mouseHandler
+
+        MouseUp mouseHandler ->
+            mouseHandlerToSvgAttr "mouseup" localToWorld mouseHandler
+
+
+{-| Convert a `MouseHandler msg` to an `Attribute msg` using appropriate
+environmental information.
+-}
+mouseHandlerToSvgAttr :
+    String
+    -> AffineTransform
+    -> MouseHandler msg
+    -> Attribute msg
+mouseHandlerToSvgAttr eventName localToWorld mouseHandler =
+    HtmlEvents.on
+        eventName
+        (mouseHandlerToMessageDecoder localToWorld mouseHandler)
 
 
 
 ---- JSON Decoders ------------------------------------------------------------
+
+
+{-| Create a `Decoder msg` from a `MouseHandler msg` and appropriate
+environmental information.
+
+TODO: This function will require information about the coordinate systems to
+create the pointIn function.
+
+-}
+mouseHandlerToMessageDecoder :
+    AffineTransform
+    -> MouseHandler msg
+    -> Decoder msg
+mouseHandlerToMessageDecoder localToWorld (MouseHandler mouseInfoToMsg) =
+    decodeMouseInfo localToWorld |> D.map mouseInfoToMsg
 
 
 {-| Decode mouse information for an event handler.

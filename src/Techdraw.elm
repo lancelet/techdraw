@@ -6,6 +6,9 @@ module Techdraw exposing
     , transform, translate, rotateDegrees, rotateDegreesAbout
     , skewXDegrees, scale
     , onEvent
+    , onMouseClick, onMouseContextMenu, onMouseDblClick, onMouseDown
+    , onMouseEnter, onMouseLeave, onMouseMove, onMouseOut, onMouseOver
+    , onMouseUp
     , toSvg, toSvgWithWarnings
     )
 
@@ -33,6 +36,9 @@ module Techdraw exposing
 # Adding Handlers for Events
 
 @docs onEvent
+@docs onMouseClick, onMouseContextMenu, onMouseDblClick, onMouseDown
+@docs onMouseEnter, onMouseLeave, onMouseMove, onMouseOut, onMouseOver
+@docs onMouseUp
 
 
 # Converting Drawings to SVG
@@ -42,7 +48,7 @@ module Techdraw exposing
 -}
 
 import Html exposing (Html)
-import Techdraw.Event exposing (EventHandler)
+import Techdraw.Event as Event exposing (EventHandler, MouseInfo)
 import Techdraw.Internal.Dwg exposing (Dwg(..))
 import Techdraw.Internal.StyleAtom as StyleAtom exposing (StyleAtom)
 import Techdraw.Internal.Svg.Machine as DwgMachine
@@ -242,6 +248,87 @@ scale scaleX scaleY =
 onEvent : EventHandler msg -> Drawing msg -> Drawing msg
 onEvent eventHandler =
     unDrawing >> DwgEventHandler eventHandler >> Drawing
+
+
+{-| Helper function ao add a mouse event.
+-}
+onMouseEvent :
+    (Event.MouseHandler msg -> EventHandler msg)
+    -> (MouseInfo -> msg)
+    -> Drawing msg
+    -> Drawing msg
+onMouseEvent createEventHandler createMsg =
+    onEvent (Event.MouseHandler createMsg |> createEventHandler)
+
+
+{-| Add a mouse click handler to an existing drawing.
+-}
+onMouseClick : (MouseInfo -> msg) -> Drawing msg -> Drawing msg
+onMouseClick =
+    onMouseEvent Event.MouseClick
+
+
+{-| Add a mouse context menu handler to an existing drawing.
+-}
+onMouseContextMenu : (MouseInfo -> msg) -> Drawing msg -> Drawing msg
+onMouseContextMenu =
+    onMouseEvent Event.MouseContextMenu
+
+
+{-| Add a mouse double click handler to an existing drawing.
+-}
+onMouseDblClick : (MouseInfo -> msg) -> Drawing msg -> Drawing msg
+onMouseDblClick =
+    onMouseEvent Event.MouseDblClick
+
+
+{-| Add a mouse button down handler to an existing drawing.
+-}
+onMouseDown : (MouseInfo -> msg) -> Drawing msg -> Drawing msg
+onMouseDown =
+    onMouseEvent Event.MouseDown
+
+
+{-| Add a mouse enter handler to an existing drawing.
+-}
+onMouseEnter : (MouseInfo -> msg) -> Drawing msg -> Drawing msg
+onMouseEnter =
+    onMouseEvent Event.MouseEnter
+
+
+{-| Add a mouse leave handler to an existing drawing.
+-}
+onMouseLeave : (MouseInfo -> msg) -> Drawing msg -> Drawing msg
+onMouseLeave =
+    onMouseEvent Event.MouseLeave
+
+
+{-| Add a mouse move event handler to an existing drawing.
+-}
+onMouseMove : (MouseInfo -> msg) -> Drawing msg -> Drawing msg
+onMouseMove =
+    onMouseEvent Event.MouseMove
+
+
+{-| Add a mouse out event handler to an existing drawing.
+-}
+onMouseOut : (MouseInfo -> msg) -> Drawing msg -> Drawing msg
+onMouseOut =
+    onMouseEvent Event.MouseOut
+
+
+{-| Add a mouse over event handler to an existing drawing.
+-}
+onMouseOver : (MouseInfo -> msg) -> Drawing msg -> Drawing msg
+onMouseOver =
+    onMouseEvent Event.MouseOver
+
+
+{-| Add a mouse up event handler to an existing drawing.
+-}
+onMouseUp : (MouseInfo -> msg) -> Drawing msg -> Drawing msg
+onMouseUp =
+    onMouseEvent Event.MouseUp
 
 
 
