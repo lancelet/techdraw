@@ -73,7 +73,14 @@ import Techdraw.Internal.Svg.Machine as DwgMachine
 import Techdraw.Math as Math exposing (AffineTransform, P2, V2)
 import Techdraw.Path exposing (Path)
 import Techdraw.Style as Style
-import Techdraw.Types exposing (CSysName, FrozenName, Order(..), Sizing)
+import Techdraw.Types
+    exposing
+        ( CSysName
+        , FrozenName
+        , Order(..)
+        , Sizing
+        , Visibility
+        )
 
 
 
@@ -274,10 +281,21 @@ scale scaleX scaleY =
 
 
 {-| Freeze a drawing, adding an optional name to it.
+
+Freezing a drawing freezes all the styles and transformations of a drawing
+in place. If the drawing is later transformed, the transformation will apply
+to the entire drawing, including all its stroked paths, etc. This means that
+non-uniform stroke widths, etc., can be produced by freezing and then
+transforming a drawing.
+
+A frozen drawing may be re-used later in the drawing tree with the
+[`use`](#use) function. Re-using a drawing is very efficient, because in the
+underlying SVG, the re-used drawing will be referenced by name.
+
 -}
-freeze : Maybe FrozenName -> Drawing msg -> Drawing msg
-freeze optName =
-    unDrawing >> DwgFrozen optName >> Drawing
+freeze : Visibility -> Maybe FrozenName -> Drawing msg -> Drawing msg
+freeze visibility optName =
+    unDrawing >> DwgFrozen visibility optName >> Drawing
 
 
 {-| Re-use a frozen drawing, summoning it by name.

@@ -120,7 +120,7 @@ drawing (Model model) =
                 }
             )
             |> rectStyle
-            |> TD.freeze (Just (TT.FrozenName "frozen_rect"))
+            |> TD.freeze TT.Hidden (Just (TT.FrozenName "frozen_rect"))
         , TD.path
             (rectRounded
                 { x = halfWidth - (1 - 0.2) * circleRadius
@@ -139,12 +139,12 @@ drawing (Model model) =
             , TD.use (TT.FrozenName "frozen_rect")
                 |> TD.translate (Math.v2 -(2 * circleRadius + 10) 0)
             ]
-            |> TD.freeze (Just (TT.FrozenName "rect_pair"))
+            |> TD.freeze TT.Visible (Just (TT.FrozenName "rect_pair"))
         , TD.stack TT.TopToBottom
             [ TD.use (TT.FrozenName "rect_pair")
             , TD.use (TT.FrozenName "frozen_rect")
             ]
-            |> TD.freeze (Just (TT.FrozenName "triple"))
+            |> TD.freeze TT.Visible (Just (TT.FrozenName "triple"))
             |> TD.translate (Math.v2 0 (2 * circleRadius + 10))
         , TD.use (TT.FrozenName "triple")
             |> TD.translate (Math.v2 0 -(2 * circleRadius + 10))
@@ -164,7 +164,7 @@ drawing (Model model) =
         ]
         |> TD.tagCSys (TT.CSysName "original")
         |> rectTransform (Model model)
-        |> TD.freeze Nothing
+        |> TD.freeze TT.Visible Nothing
         |> TD.onHostMouseMove
             (\(MouseInfo mouseInfo) ->
                 mouseInfo.pointIn (TT.CSysName "original") |> MsgMouseMove

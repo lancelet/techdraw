@@ -10,7 +10,7 @@ import Techdraw.Event exposing (EventHandler)
 import Techdraw.Internal.StyleAtom exposing (StyleAtom)
 import Techdraw.Math exposing (AffineTransform)
 import Techdraw.Path exposing (Path)
-import Techdraw.Types exposing (CSysName, FrozenName)
+import Techdraw.Types exposing (CSysName, FrozenName, Visibility)
 
 
 {-| Internal drawing type.
@@ -25,5 +25,5 @@ type Dwg msg
     | DwgEventHandler (EventHandler msg) (Dwg msg)
     | DwgHostEventHandler (EventHandler msg) (Dwg msg)
     | DwgTagCSys CSysName (Dwg msg)
-    | DwgFrozen (Maybe FrozenName) (Dwg msg)
+    | DwgFrozen Visibility (Maybe FrozenName) (Dwg msg)
     | DwgUse FrozenName

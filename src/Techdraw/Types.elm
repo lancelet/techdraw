@@ -4,7 +4,7 @@ module Techdraw.Types exposing
     , sizingGetViewBox, sizingGetContainerSize
     , containerSizeGetWidth, containerSizeGetHeight
     , viewBoxGetXMin, viewBoxGetYMin, viewBoxGetWidth, viewBoxGetHeight
-    , Order(..)
+    , Order(..), Visibility(..)
     , CSysName(..)
     , FrozenName(..)
     )
@@ -23,7 +23,7 @@ module Techdraw.Types exposing
 
 # Drawing Order
 
-@docs Order
+@docs Order, Visibility
 
 
 # Names
@@ -191,6 +191,17 @@ or bottom-to-top order?
 type Order
     = TopToBottom
     | BottomToTop
+
+
+
+---- Visibility ---------------------------------------------------------------
+
+
+{-| Visibility of an item.
+-}
+type Visibility
+    = Visible
+    | Hidden
 
 
 

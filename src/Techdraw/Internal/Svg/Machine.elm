@@ -39,10 +39,12 @@ import Techdraw.Types as T
         , FrozenName(..)
         , Sizing
         , ViewBox
+        , Visibility(..)
         )
 import TypedSvg
 import TypedSvg.Attributes as SvgA
 import TypedSvg.Core exposing (Svg)
+import TypedSvg.Types as SvgTypes
 
 
 
@@ -193,7 +195,7 @@ type Kont msg
     | KontAtop2 (List (Svg msg)) (Env msg)
     | KontBeneath1 (Dwg msg) (Env msg)
     | KontBeneath2 (List (Svg msg)) (Env msg)
-    | KontFrozen (Maybe FrozenName) (Env msg)
+    | KontFrozen Visibility (Maybe FrozenName) (Env msg)
 
 
 {-| State in the state machine.
@@ -238,7 +240,12 @@ step : State msg -> State msg
 step state =
     case ( state.expr, state.kont ) of
         {- ----------------------------------------------------------------- -}
-        {- Terminal state -}
+        {- Terminal state
+
+           Really we will never execute this, because `extractIfDone` will
+           identify the terminal state first. But this is here to keep the
+           type-checker happy and everyone sane.
+        -}
         {- ----------------------------------------------------------------- -}
         ( Fine _, [] ) ->
             state
@@ -253,11 +260,11 @@ step state =
         {- Draw a Path. -}
         ( Init (DwgPath path), _ ) ->
             let
-                ( sAttrs, state1 ) =
-                    styleAttrs state
+                ( styleAttrs, state1 ) =
+                    stateToStyleAttrs state
             in
             state1
-                |> setExpr (Fine (pathToSvg state.envr sAttrs path))
+                |> setExpr (Fine (pathToSvg state.envr styleAttrs path))
                 |> modEnvr Env.removeEventHandlers
 
         {- Update the style in the environment. -}
@@ -311,19 +318,19 @@ step state =
                 |> modEnvr (Env.tagCSys cSysName)
 
         {- Freeze a drawing: convert it to SVG at this point. -}
-        ( Init (DwgFrozen optName drawing), _ ) ->
+        ( Init (DwgFrozen visibility optName drawing), _ ) ->
             state
-                |> suspendKont (KontFrozen optName)
+                |> suspendKont (KontFrozen visibility optName)
                 |> modEnvr Env.setLocalToWorldTransformAsInit
                 |> setExpr (Init drawing)
 
         ( Init (DwgUse frozenName), _ ) ->
             let
-                ( sAttrs, state1 ) =
-                    styleAttrs state
+                ( styleAttrs, state1 ) =
+                    stateToStyleAttrs state
             in
             state1
-                |> setExpr (Fine <| useToSvg state.envr sAttrs frozenName)
+                |> setExpr (Fine <| useToSvg state.envr styleAttrs frozenName)
                 |> modEnvr Env.removeEventHandlers
 
         {- ----------------------------------------------------------------- -}
@@ -380,11 +387,14 @@ step state =
         {- Process the "freeze" continuation. This attaches an optional ID
            to the frozen drawing.
         -}
-        ( Fine svgs, (KontFrozen optName susEnv) :: _ ) ->
+        ( Fine svgs, (KontFrozen visibility optName susEnv) :: _ ) ->
             state
                 |> popKont
                 |> threadEnvr susEnv
-                |> setExpr (Fine <| freezeWithOptionalId susEnv optName svgs)
+                |> setExpr
+                    (Fine <|
+                        freezeWithOptionalId susEnv visibility optName svgs
+                    )
 
 
 {-| Set the expression in the state.
@@ -431,8 +441,8 @@ popKont oldState =
 
 {-| Get the style attributes for the current state's style.
 -}
-styleAttrs : State msg -> ( List (Attribute msg), State msg )
-styleAttrs state =
+stateToStyleAttrs : State msg -> ( List (Attribute msg), State msg )
+stateToStyleAttrs state =
     let
         ( attrs, childEnv ) =
             SvgStyle.envStyleToSvg state.envr
@@ -443,19 +453,20 @@ styleAttrs state =
 {-| Convert a `Path` to SVG in the current environment.
 -}
 pathToSvg : Env msg -> List (Attribute msg) -> Path -> List (Svg msg)
-pathToSvg env sAttrs path =
+pathToSvg env styleAttrs path =
     let
-        l2w =
+        localToWorld =
             Env.getLocalToWorld env
 
-        nfd =
+        numFixedDigits =
             Env.getNFixDigits env
 
         str =
-            Path.pathApplyAffineTransform l2w path |> SvgPath.toString nfd
+            Path.pathApplyAffineTransform localToWorld path
+                |> SvgPath.toString numFixedDigits
 
         attrs =
-            SvgA.d str :: sAttrs
+            SvgA.d str :: styleAttrs
     in
     attachPendingEvents env [ TypedSvg.path attrs [] ]
 
@@ -463,10 +474,11 @@ pathToSvg env sAttrs path =
 {-| Convert a "use" to SVG.
 -}
 useToSvg : Env msg -> List (Attribute msg) -> FrozenName -> List (Svg msg)
-useToSvg env sAttrs (FrozenName name) =
+useToSvg env styleAttrs (FrozenName name) =
     attachPendingEvents env
         [ TypedSvg.g
             [ SvgA.transform
+                -- Post-multiplying by inverse of initial transform.
                 [ Extras.convertAffineTransformToSvg
                     (Math.affMatMul
                         (Env.getLocalToWorld env)
@@ -474,7 +486,7 @@ useToSvg env sAttrs (FrozenName name) =
                     )
                 ]
             ]
-            [ TypedSvg.use (SvgA.href ("#" ++ name) :: sAttrs) []
+            [ TypedSvg.use (SvgA.href ("#" ++ name) :: styleAttrs) []
             ]
         ]
 
@@ -511,25 +523,36 @@ attachPendingEvents env svgs =
 -}
 freezeWithOptionalId :
     Env msg
+    -> Visibility
     -> Maybe FrozenName
     -> List (Svg msg)
     -> List (Svg msg)
-freezeWithOptionalId env optName svgs =
+freezeWithOptionalId env visibility optName svgs =
     case optName of
         Nothing ->
             svgs
 
         Just (FrozenName name) ->
+            let
+                attrs =
+                    case visibility of
+                        Visible ->
+                            [ SvgA.transform
+                                -- Post-multiplying by inverse of initial
+                                -- transform.
+                                [ Extras.convertAffineTransformToSvg
+                                    (Math.affMatMul
+                                        (Env.getLocalToWorld env)
+                                        (Env.getInitWorldToLocal env)
+                                    )
+                                ]
+                            ]
+
+                        Hidden ->
+                            [ SvgA.display SvgTypes.DisplayNone ]
+            in
             [ TypedSvg.g
-                [ SvgA.transform
-                    -- Post-multiplying by inverse of initial transform.
-                    [ Extras.convertAffineTransformToSvg
-                        (Math.affMatMul
-                            (Env.getLocalToWorld env)
-                            (Env.getInitWorldToLocal env)
-                        )
-                    ]
-                ]
+                attrs
                 [ TypedSvg.g
                     [ SvgA.id name ]
                     svgs
