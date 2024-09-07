@@ -2,15 +2,15 @@ module Main exposing (main)
 
 import Browser
 import Color
+import Depict as TD exposing (Drawing)
+import Depict.Event exposing (MouseInfo(..))
+import Depict.Math as Math exposing (P2, p2)
+import Depict.Shapes.Simple exposing (circle, rectRounded)
+import Depict.Style as Style exposing (LinearGradient, Stop(..))
+import Depict.Types as TT
 import Html exposing (Html)
 import Html.Attributes as HA
 import Html.Events as HE
-import Techdraw as TD exposing (Drawing)
-import Techdraw.Event exposing (MouseInfo(..))
-import Techdraw.Math as Math exposing (P2, p2)
-import Techdraw.Shapes.Simple exposing (circle, rectRounded)
-import Techdraw.Style as Style exposing (LinearGradient, Stop(..))
-import Techdraw.Types as TT
 
 
 type Model
