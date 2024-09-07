@@ -5,6 +5,7 @@ module Techdraw exposing
     , dashArray, dashOffset
     , transform, translate, rotateDegrees, rotateDegreesAbout
     , skewXDegrees, scale
+    , freeze, use
     , onEvent
     , onMouseClick, onMouseContextMenu, onMouseDblClick, onMouseDown
     , onMouseEnter, onMouseLeave, onMouseMove, onMouseOut, onMouseOver
@@ -37,6 +38,11 @@ module Techdraw exposing
 @docs skewXDegrees, scale
 
 
+# Freezing Drawings
+
+@docs freeze, use
+
+
 # Adding Handlers for Events
 
 @docs onEvent
@@ -67,7 +73,7 @@ import Techdraw.Internal.Svg.Machine as DwgMachine
 import Techdraw.Math as Math exposing (AffineTransform, P2, V2)
 import Techdraw.Path exposing (Path)
 import Techdraw.Style as Style
-import Techdraw.Types exposing (CSysName, Order(..), Sizing)
+import Techdraw.Types exposing (CSysName, FrozenName, Order(..), Sizing)
 
 
 
@@ -261,6 +267,24 @@ skewXDegrees =
 scale : Float -> Float -> Drawing msg -> Drawing msg
 scale scaleX scaleY =
     Math.Scaling scaleX scaleY |> Math.affScaling |> transform
+
+
+
+---- Freezing Drawings --------------------------------------------------------
+
+
+{-| Freeze a drawing, adding an optional name to it.
+-}
+freeze : Maybe FrozenName -> Drawing msg -> Drawing msg
+freeze optName =
+    unDrawing >> DwgFrozen optName >> Drawing
+
+
+{-| Re-use a frozen drawing, summoning it by name.
+-}
+use : FrozenName -> Drawing msg
+use =
+    DwgUse >> Drawing
 
 
 

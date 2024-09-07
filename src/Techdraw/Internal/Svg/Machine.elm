@@ -28,10 +28,18 @@ import Techdraw.Internal.Dwg exposing (Dwg(..))
 import Techdraw.Internal.Svg.Defs as Defs
 import Techdraw.Internal.Svg.Env as Env exposing (Env, Warning)
 import Techdraw.Internal.Svg.Event exposing (eventHandlersToSvgAttrs)
+import Techdraw.Internal.Svg.Extras as Extras
 import Techdraw.Internal.Svg.Path as SvgPath
 import Techdraw.Internal.Svg.Style as SvgStyle
+import Techdraw.Math as Math
 import Techdraw.Path as Path exposing (Path)
-import Techdraw.Types as T exposing (ContainerSize, Sizing, ViewBox)
+import Techdraw.Types as T
+    exposing
+        ( ContainerSize
+        , FrozenName(..)
+        , Sizing
+        , ViewBox
+        )
 import TypedSvg
 import TypedSvg.Attributes as SvgA
 import TypedSvg.Core exposing (Svg)
@@ -185,6 +193,7 @@ type Kont msg
     | KontAtop2 (List (Svg msg)) (Env msg)
     | KontBeneath1 (Dwg msg) (Env msg)
     | KontBeneath2 (List (Svg msg)) (Env msg)
+    | KontFrozen (Maybe FrozenName) (Env msg)
 
 
 {-| State in the state machine.
@@ -301,6 +310,22 @@ step state =
                 |> setExpr (Init drawing)
                 |> modEnvr (Env.tagCSys cSysName)
 
+        {- Freeze a drawing: convert it to SVG at this point. -}
+        ( Init (DwgFrozen optName drawing), _ ) ->
+            state
+                |> suspendKont (KontFrozen optName)
+                |> modEnvr Env.setLocalToWorldTransformAsInit
+                |> setExpr (Init drawing)
+
+        ( Init (DwgUse frozenName), _ ) ->
+            let
+                ( sAttrs, state1 ) =
+                    styleAttrs state
+            in
+            state1
+                |> setExpr (Fine <| useToSvg state.envr sAttrs frozenName)
+                |> modEnvr Env.removeEventHandlers
+
         {- ----------------------------------------------------------------- -}
         {- Continuation states -}
         {- ----------------------------------------------------------------- -}
@@ -351,6 +376,15 @@ step state =
                 |> popKont
                 |> threadEnvr susEnv
                 |> setExpr (Fine <| combineDrawings susEnv topSvgs bottomSvgs)
+
+        {- Process the "freeze" continuation. This attaches an optional ID
+           to the frozen drawing.
+        -}
+        ( Fine svgs, (KontFrozen optName susEnv) :: _ ) ->
+            state
+                |> popKont
+                |> threadEnvr susEnv
+                |> setExpr (Fine <| freezeWithOptionalId susEnv optName svgs)
 
 
 {-| Set the expression in the state.
@@ -426,6 +460,25 @@ pathToSvg env sAttrs path =
     attachPendingEvents env [ TypedSvg.path attrs [] ]
 
 
+{-| Convert a "use" to SVG.
+-}
+useToSvg : Env msg -> List (Attribute msg) -> FrozenName -> List (Svg msg)
+useToSvg env sAttrs (FrozenName name) =
+    attachPendingEvents env
+        [ TypedSvg.g
+            [ SvgA.transform
+                [ Extras.convertAffineTransformToSvg
+                    (Math.affMatMul
+                        (Env.getLocalToWorld env)
+                        (Env.getInitWorldToLocal env)
+                    )
+                ]
+            ]
+            [ TypedSvg.use (SvgA.href ("#" ++ name) :: sAttrs) []
+            ]
+        ]
+
+
 {-| Combine drawings in the specified order.
 -}
 combineDrawings : Env msg -> List (Svg msg) -> List (Svg msg) -> List (Svg msg)
@@ -448,3 +501,37 @@ attachPendingEvents env svgs =
 
     else
         svgs
+
+
+{-| Freeze a drawing that has been converted to SVG.
+
+  - Performs the local-to-world transformation in the group.
+  - Attaches the optional frozen name as the ID.
+
+-}
+freezeWithOptionalId :
+    Env msg
+    -> Maybe FrozenName
+    -> List (Svg msg)
+    -> List (Svg msg)
+freezeWithOptionalId env optName svgs =
+    case optName of
+        Nothing ->
+            svgs
+
+        Just (FrozenName name) ->
+            [ TypedSvg.g
+                [ SvgA.transform
+                    -- Post-multiplying by inverse of initial transform.
+                    [ Extras.convertAffineTransformToSvg
+                        (Math.affMatMul
+                            (Env.getLocalToWorld env)
+                            (Env.getInitWorldToLocal env)
+                        )
+                    ]
+                ]
+                [ TypedSvg.g
+                    [ SvgA.id name ]
+                    svgs
+                ]
+            ]

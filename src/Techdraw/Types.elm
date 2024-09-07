@@ -6,6 +6,7 @@ module Techdraw.Types exposing
     , viewBoxGetXMin, viewBoxGetYMin, viewBoxGetWidth, viewBoxGetHeight
     , Order(..)
     , CSysName(..)
+    , FrozenName(..)
     )
 
 {-| Additional types.
@@ -28,6 +29,7 @@ module Techdraw.Types exposing
 # Names
 
 @docs CSysName
+@docs FrozenName
 
 -}
 
@@ -199,3 +201,12 @@ type Order
 -}
 type CSysName
     = CSysName String
+
+
+{-| Name of a frozen drawing.
+
+Let it go.
+
+-}
+type FrozenName
+    = FrozenName String

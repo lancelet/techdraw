@@ -1,9 +1,10 @@
 module Techdraw.Internal.StyleAtom exposing (StyleAtom(..), apply)
 
-{-| Individual components of a Style.
+{-| Individual component of a Style.
 
-[`StyleAtom`](#StyleAtom) is used so that style settings in a drawing tree
-take up as little room as possible.
+A [`StyleAtom`](#StyleAtom) is a single style setting, encapsulated as its
+own type. These are used so that style settings in a drawing tree take up as
+little memory as possible.
 
 @docs StyleAtom, apply
 

@@ -6,7 +6,8 @@ module Techdraw.Internal.Svg.Env exposing
     , getLocalToWorld, getWarnings, getNFixDigits, getStyle
     , modStyle, applyStyleAtom
     , getDefs, modDefs
-    , concatTransform
+    , getInitLocalToWorld, getInitWorldToLocal
+    , setLocalToWorldTransform, setLocalToWorldTransformAsInit, concatTransform
     , getEventHandlers, hasPendingEventHandlers, addEventHandler
     , removeEventHandlers
     , addHostEventHandler, getHostEventHandlers
@@ -24,7 +25,8 @@ module Techdraw.Internal.Svg.Env exposing
 @docs getLocalToWorld, getWarnings, getNFixDigits, getStyle
 @docs modStyle, applyStyleAtom
 @docs getDefs, modDefs
-@docs concatTransform
+@docs getInitLocalToWorld, getInitWorldToLocal
+@docs setLocalToWorldTransform, setLocalToWorldTransformAsInit, concatTransform
 @docs getEventHandlers, hasPendingEventHandlers, addEventHandler
 @docs removeEventHandlers
 @docs addHostEventHandler, getHostEventHandlers
@@ -48,7 +50,9 @@ import Techdraw.Types as T exposing (CSysName, Sizing(..))
 -}
 type Env msg
     = Env
-        { localToWorld : AffineTransform
+        { sizing : Sizing
+        , initTransform : AffineTransform
+        , localToWorld : AffineTransform
         , warnings : List Warning
         , nFixDigits : NFixDigits
         , style : Style
@@ -113,6 +117,41 @@ getDefs (Env env) =
 modDefs : (Defs -> Defs) -> Env msg -> Env msg
 modDefs modFn (Env oldEnv) =
     Env { oldEnv | defs = modFn oldEnv.defs }
+
+
+{-| Return the initial local-to-world transformation.
+-}
+getInitLocalToWorld : Env msg -> AffineTransform
+getInitLocalToWorld (Env env) =
+    env.initTransform
+
+
+{-| Return the initial world-to-local transformation.
+-}
+getInitWorldToLocal : Env msg -> AffineTransform
+getInitWorldToLocal =
+    getInitLocalToWorld >> Math.affInvert
+
+
+{-| Set the local-to-world transformation.
+
+This completedly overrides the transformation. To concatenate a transformation,
+use the [`concatTransform`](#concatTransform) function.
+
+-}
+setLocalToWorldTransform : AffineTransform -> Env msg -> Env msg
+setLocalToWorldTransform affineTransform (Env oldEnv) =
+    Env
+        { oldEnv
+            | localToWorld = affineTransform
+        }
+
+
+{-| Override the transform in the environment with the original transform.
+-}
+setLocalToWorldTransformAsInit : Env msg -> Env msg
+setLocalToWorldTransformAsInit (Env env) =
+    setLocalToWorldTransform env.initTransform (Env env)
 
 
 {-| Concatenate a transformation with the current local-to-world
@@ -233,8 +272,14 @@ unWarning (Warning str) =
 -}
 init : Sizing -> Env msg
 init sizing =
+    let
+        initTransform =
+            initLocalToWorld sizing
+    in
     Env
-        { localToWorld = initLocalToWorld sizing
+        { sizing = sizing
+        , initTransform = initTransform
+        , localToWorld = initTransform
         , warnings = []
         , nFixDigits = NFixDigits 2
         , style = Style.inheritAll
@@ -282,7 +327,9 @@ which are threaded through the depthwise traversal of the tree.
 thread : Env msg -> Env msg -> Env msg
 thread (Env ancestor) (Env next) =
     Env
-        { localToWorld = ancestor.localToWorld
+        { sizing = ancestor.sizing
+        , initTransform = ancestor.initTransform
+        , localToWorld = ancestor.localToWorld
         , warnings = next.warnings
         , nFixDigits = ancestor.nFixDigits
         , style = ancestor.style
